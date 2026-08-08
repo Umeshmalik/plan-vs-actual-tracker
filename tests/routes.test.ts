@@ -39,6 +39,7 @@ import * as actualById from "../src/app/api/actuals/[id]/route";
 import * as report from "../src/app/api/report/route";
 import * as locks from "../src/app/api/locks/route";
 import * as lockByMonth from "../src/app/api/locks/[month]/route";
+import * as settings from "../src/app/api/settings/route";
 import * as preview from "../src/app/api/imports/preview/route";
 import * as commit from "../src/app/api/imports/commit/route";
 import * as health from "../src/app/api/health/route";
@@ -281,6 +282,32 @@ describe("REST layer", () => {
     );
     expect([s, b.error.code]).toEqual([422, "VALIDATION_FAILED"]); // previewCsv flags the row first
     await state.repo.unlock("2026-02");
+  });
+
+  /**
+   * The fiscal-year start is the one preference that changes what every screen
+   * reports on, so it has to be a stored, per-user value rather than something
+   * the browser remembers — and it has to default to the calendar year for a
+   * user who never touches it.
+   */
+  it("settings: defaults to the calendar year, saves a new start, rejects a bad one", async () => {
+    await M.User.create({ _id: state.repo.uid, email: "settings@example.com", passwordHash: "x" });
+
+    const [s, b] = await json(await settings.GET(req("/api/settings")));
+    expect([s, b.fiscalYearStartMonth]).toEqual([200, 1]); // January = calendar year
+
+    const [s2, b2] = await json(await settings.PUT(req("/api/settings", "PUT", { fiscalYearStartMonth: 4 })));
+    expect([s2, b2.fiscalYearStartMonth]).toEqual([200, 4]);
+    expect((await json(await settings.GET(req("/api/settings"))))[1].fiscalYearStartMonth).toBe(4);
+
+    for (const bad of [0, 13, "April", null]) {
+      const [s3, b3] = await json(
+        await settings.PUT(req("/api/settings", "PUT", { fiscalYearStartMonth: bad }))
+      );
+      expect([s3, b3.error.code]).toEqual([422, "VALIDATION_FAILED"]);
+    }
+    // …and a rejected write left the stored value alone.
+    expect((await json(await settings.GET(req("/api/settings"))))[1].fiscalYearStartMonth).toBe(4);
   });
 
   it("health: real DB check", async () => {
