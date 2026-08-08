@@ -10,3 +10,6 @@ node_modules/
 
 # Local browser-automation artefacts.
 .playwright-mcp/
+
+# Private submission audit — the assignment checklist, not part of the deliverable.
+AUDIT.md
