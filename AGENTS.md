@@ -23,7 +23,6 @@ npm test               # vitest run (all files)
 npx vitest run tests/indexes.test.ts        # one file
 npx vitest run -t "user B cannot"           # one test by name
 npm run seed           # idempotent; both demo users + the sample ledger
-npm run dedupe:actuals # one-off migration, see "One entry per cell" below
 npm run format         # fixes what format:check flags
 ```
 
@@ -63,7 +62,9 @@ These are the ones where a wrong change still compiles, still passes a casual sm
 
 **`variancePct` is `null` when `plan === 0`** — never `NaN`, never `Infinity`. One function, `variancePct()`. Nothing else in the codebase divides by a plan.
 
-**One entry per category × month.** `Actual` carries a unique `{userId, categoryId, month}` index, so every write upserts: `repo.upsertActual()` for a single cell, `repo.createActuals()` (one `bulkWrite`) for an import. There is no plain insert — posting the same cell twice replaces the figure rather than adding a row the report would silently sum. Two consequences: `previewCsv` rejects a second row for a cell already claimed earlier in the same file, and a database written before this rule needs `npm run dedupe:actuals` **before** the unique index ships — Mongoose builds indexes in the background and a unique build over existing duplicates fails silently, leaving no constraint and nothing on screen to say so.
+**One entry per category × month.** `Actual` carries a unique `{userId, categoryId, month}` index, so every write upserts: `repo.upsertActual()` for a single cell, `repo.createActuals()` (one `bulkWrite`) for an import. There is no plain insert — posting the same cell twice replaces the figure rather than adding a row the report would silently sum. `previewCsv` rejects a second row for a cell already claimed earlier in the same file.
+
+**A unique index that cannot be BUILT looks exactly like one that is working.** Mongoose builds in the background and swallows the failure, so the app comes up with no constraint and nothing on screen to say so. Two things trigger it: rows that already violate the constraint, and — the one that actually bit us — documents in the collection that lack the indexed fields entirely, which all index as null and collide with each other. The `categories` collection is shared with another application, so its unique index carries `partialFilterExpression: {normalizedName: {$type: "string"}}` to cover our rows only. Never call `syncIndexes()` against these collections: it DROPS every index the schema does not declare, including the neighbour's.
 
 **`normalizeName()` in `repo.ts` is the only definition of "same name"** (NFC + collapse whitespace + case-fold). It is what the unique category index sees, and the CSV import resolves rows through the same function. Two definitions is how look-alike duplicate categories get in.
 
