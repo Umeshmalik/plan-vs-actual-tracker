@@ -3,6 +3,9 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ChevronDown, LogOut } from "lucide-react";
 import { currentUser, signOut } from "@/lib/auth";
+import { fiscalYearLabel, fiscalYearOf } from "@/lib/fiscalYear";
+import { DEFAULT_RANGE } from "@/lib/range";
+import { getSettings } from "@/lib/reads";
 import { SectionTabs } from "@/components/Tabs";
 import { MonthRangePicker } from "@/components/MonthRangePicker";
 import { RefreshButton } from "@/components/RefreshButton";
@@ -21,6 +24,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = await currentUser();
   if (!user) redirect("/login");
 
+  // The wordmark used to print a hard-coded "fy 2026". It now names the fiscal
+  // year the user's own start month puts us in, which is also the one the range
+  // picker's FY buttons are anchored on.
+  const { fiscalYearStartMonth } = await getSettings(user.id);
+  const currentFy = fiscalYearLabel(
+    fiscalYearOf(DEFAULT_RANGE.from, fiscalYearStartMonth),
+    fiscalYearStartMonth
+  );
+
   async function endSession() {
     "use server";
     await signOut({ redirectTo: "/login" });
@@ -28,16 +40,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-20 flex items-center gap-4 border-b bg-background/95 px-6 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 max-sm:px-3">
+      <header className="sticky top-0 z-20 flex items-center gap-4 border-b bg-background/95 px-6 py-3 backdrop-blur supports-backdrop-filter:bg-background/80 max-sm:px-3">
         <Link href="/report" className="leading-tight">
           <span className="font-display text-base font-semibold tracking-tight">Plan vs Actual</span>
           <span className="block font-mono text-[0.65rem] tracking-[0.08em] text-muted-foreground uppercase">
-            ledger · fy 2026
+            ledger · {currentFy}
           </span>
         </Link>
 
         <Suspense fallback={<Skeleton className="ml-auto h-8 w-44" />}>
-          <MonthRangePicker />
+          <MonthRangePicker fiscalYearStartMonth={fiscalYearStartMonth} />
         </Suspense>
 
         <RefreshButton />
@@ -70,9 +82,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
       <SectionTabs />
 
-      <main className="mx-auto max-w-[1100px] p-6 max-sm:p-4">{children}</main>
+      <main className="mx-auto max-w-275 p-6 max-sm:p-4">{children}</main>
 
-      <footer className="mx-auto max-w-[1100px] px-6 pb-8 font-mono text-[0.7rem] text-muted-foreground max-sm:px-4">
+      <footer className="mx-auto max-w-275 px-6 pb-8 font-mono text-[0.7rem] text-muted-foreground max-sm:px-4">
         Money is stored in integer minor units · months are YYYY-MM keys · locking is enforced by the API, not
         the UI
       </footer>

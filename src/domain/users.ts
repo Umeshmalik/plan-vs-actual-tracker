@@ -14,6 +14,7 @@ import { z } from "zod";
 import { M } from "./models";
 import { AppError } from "../lib/errors";
 import { connectDb } from "../lib/db";
+import { CALENDAR_YEAR_START, isFiscalStartMonth } from "../lib/fiscalYear";
 import { passwordStrength } from "../lib/password";
 import { allowAttempt } from "../lib/ratelimit";
 
@@ -70,6 +71,44 @@ export const hashPassword = (password: string) => bcrypt.hash(password, BCRYPT_C
  * README puts out of scope. Rate limiting below bounds how fast the oracle can
  * be read; the real fix is verification mail.
  */
+/**
+ * The user's own settings live here for the same reason createUser does:
+ * `users` is the one collection with no tenant column, so ScopedRepo — which
+ * exists to inject `userId` into every filter — is the wrong tool. The filter
+ * here is `_id`, and this module is the only place allowed to write it.
+ */
+export const zSettings = z.object({
+  fiscalYearStartMonth: z.coerce
+    .number({ error: "Pick a month" })
+    .int()
+    .min(1, "Month must be 1-12")
+    .max(12, "Month must be 1-12"),
+});
+
+/** Never throws on a missing or pre-migration document: absent = calendar year. */
+export async function getSettings(userId: string) {
+  await connectDb();
+  const user = await M.User.findById(userId, { fiscalYearStartMonth: 1 }).lean();
+  return {
+    fiscalYearStartMonth: isFiscalStartMonth(user?.fiscalYearStartMonth)
+      ? user.fiscalYearStartMonth
+      : CALENDAR_YEAR_START,
+  };
+}
+
+export async function updateSettings(userId: string, raw: unknown) {
+  const parsed = zSettings.safeParse(raw);
+  if (!parsed.success) throw new AppError("VALIDATION_FAILED", parsed.error.issues[0].message);
+  await connectDb();
+  const user = await M.User.findByIdAndUpdate(
+    userId,
+    { $set: parsed.data },
+    { returnDocument: "after", projection: { fiscalYearStartMonth: 1 } }
+  ).lean();
+  if (!user) throw new AppError("NOT_FOUND", "That account no longer exists.");
+  return { fiscalYearStartMonth: user.fiscalYearStartMonth };
+}
+
 export async function createUser(raw: unknown) {
   const parsed = zSignup.safeParse(raw);
   if (!parsed.success) throw new AppError("VALIDATION_FAILED", parsed.error.issues[0].message);
