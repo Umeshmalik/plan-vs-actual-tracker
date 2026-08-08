@@ -18,5 +18,9 @@ export const GET = withPublicRoute(async () => {
     // stays "down" — the status code below is the alarm, not a 500
   }
   const ok = db === "up";
-  return NextResponse.json({ ok, db, version: process.env.GIT_SHA ?? "dev" }, { status: ok ? 200 : 503 });
+  // GIT_SHA is what the CI deploy job sets. The Vercel Git integration builds
+  // without it, but Vercel supplies the commit itself — so the health check can
+  // still answer "which build is this?" instead of a permanent "dev".
+  const version = process.env.GIT_SHA ?? process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "dev";
+  return NextResponse.json({ ok, db, version }, { status: ok ? 200 : 503 });
 });
