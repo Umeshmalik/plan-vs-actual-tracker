@@ -160,3 +160,41 @@ describe("the hot reads are index seeks, not collection scans", () => {
     expect(await repo.listActuals({}, 10)).toHaveLength(10); // the ceiling is real
   });
 });
+
+/**
+ * The regression this file exists to catch second: a unique index that cannot
+ * be BUILT is indistinguishable, from the app's side, from one that is working.
+ * Mongoose builds in the background and swallows the failure, so the app comes
+ * up with no constraint and nothing on screen to say so — which is exactly how
+ * production ended up with three categories called "Marketing".
+ *
+ * The trigger was a shared collection: a neighbouring application's documents
+ * have no `normalizedName`, so they all index as (null, null) and collide with
+ * each other. The partialFilterExpression is what makes the constraint apply to
+ * this app's rows only, and therefore buildable at all.
+ */
+describe("the category uniqueness constraint survives a shared collection", () => {
+  it("builds over a neighbour's documents, and still refuses our duplicates", async () => {
+    const other = new ScopedRepo(new Types.ObjectId());
+
+    // Two foreign documents, of the shape another app would write: no userId,
+    // no normalizedName. A plain unique index dies here.
+    await M.Category.collection.insertMany([
+      { title: "not ours", slug: "a" },
+      { title: "not ours either", slug: "b" },
+    ]);
+
+    await M.Category.createIndexes(); // throws if the build fails
+    const idx = (await M.Category.collection.indexes()).find(i => i.name === "userId_1_normalizedName_1");
+    expect(idx?.unique).toBe(true);
+    expect(idx?.partialFilterExpression).toEqual({ normalizedName: { $type: "string" } });
+
+    // The constraint still bites for rows that ARE ours…
+    await other.createCategory("Marketing");
+    await expect(other.createCategory("  marketing ")).rejects.toThrow(/already exists/);
+    expect(await M.Category.countDocuments({ userId: other.uid })).toBe(1);
+
+    // …and the neighbour's rows are untouched by any of it.
+    expect(await M.Category.collection.countDocuments({ slug: { $exists: true } })).toBe(2);
+  });
+});

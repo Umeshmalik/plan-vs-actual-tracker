@@ -83,9 +83,13 @@ async function main() {
     renormalized++;
   }
 
-  // syncIndexes, not ensureIndexes: it also drops indexes the schema no longer
-  // declares, and it throws rather than swallowing a failed unique build.
-  await Promise.all([M.Actual.syncIndexes(), M.Category.syncIndexes()]);
+  // createIndexes, NOT syncIndexes. syncIndexes also DROPS every index the
+  // schema does not declare, and these collections turned out to be shared with
+  // another application — so "tidying" ours would delete a neighbour's indexes
+  // as a side effect. This still builds in the foreground and still throws
+  // rather than swallowing a failed unique build, which is the part that
+  // matters here.
+  await Promise.all([M.Actual.createIndexes(), M.Category.createIndexes()]);
 
   console.log(
     `done — ${cells.length} duplicated cell(s) merged, ${dropped} entr(ies) removed, ` +
