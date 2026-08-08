@@ -338,7 +338,7 @@ export function PlansGrid({
             <TableCaption className="px-(--card-spacing) text-left">
               Targets in major units ·{" "}
               {months.length > 1
-                ? `${formatMonthLabel(months[0])} – ${formatMonthLabel(months[months.length - 1])}`
+                ? `${formatMonthLabel(months[0])} - ${formatMonthLabel(months[months.length - 1])}`
                 : formatMonthLabel(months[0])}
             </TableCaption>
             <TableHeader>
