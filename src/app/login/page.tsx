@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { AuthError } from "next-auth";
 import { signIn } from "@/lib/auth";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,8 +34,16 @@ export default function LoginPage() {
           <LoginForm action={login} />
         </CardContent>
         <CardFooter className="block text-xs text-muted-foreground">
-          Reviewing this? Use <span className="font-mono">demo@example.com</span> /{" "}
-          <span className="font-mono">review-me-2026</span>
+          <p>
+            No account?{" "}
+            <Link href="/signup" className="underline underline-offset-2">
+              Create one
+            </Link>
+          </p>
+          <p className="mt-1">
+            Reviewing this? Use <span className="font-mono">demo@example.com</span> /{" "}
+            <span className="font-mono">review-me-2026</span>
+          </p>
         </CardFooter>
       </Card>
     </main>
