@@ -1,0 +1,144 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@source "../";
+
+/*
+ * One theme, two layers.
+ *
+ * 1. shadcn's semantic variables (--background, --primary, --destructive …)
+ *    are bound to the "ledger ink on green-bar paper" palette from
+ *    frontend-plan.md §2, so every shadcn component renders in this product's
+ *    voice instead of default neutral. Nothing is restyled at the call site.
+ *
+ * 2. The domain tokens shadcn has no concept of — paper, bar, bar-locked,
+ *    ink, ledger, acct, pen — stay available as utilities for the things that
+ *    are specific to an FP&A ledger: row banding, closed-period tint, and the
+ *    favourable/unfavourable variance colours.
+ *
+ * design/prototype.html is the visual contract for both.
+ */
+
+:root {
+  /* --- the six named values from the plan, plus their two tints --- */
+  --paper: #f7f8f3; /* app background — cool paper white */
+  --bar: #e9efe3; /* green-bar row banding */
+  --bar-locked: #dce6d4; /* closed period: same band, deeper */
+  --ink: #1e2a24; /* text, borders, axes — green-black */
+  --ink-muted: #4e5c55; /* ink lightened to stay ≥4.5:1 on paper */
+  --ledger: #2f7d5b; /* under plan / favourable */
+  --acct: #b23a2e; /* over plan / unfavourable, destructive */
+  --pen: #2b5aa6; /* every interaction — the bookkeeper's pen */
+
+  /* --- shadcn semantics, bound to the above --- */
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: #ffffff;
+  --card-foreground: var(--ink);
+  --popover: #ffffff;
+  --popover-foreground: var(--ink);
+  --primary: var(--pen);
+  --primary-foreground: #ffffff;
+  --secondary: var(--bar);
+  --secondary-foreground: var(--ink);
+  --muted: var(--bar);
+  --muted-foreground: var(--ink-muted);
+  --accent: var(--bar);
+  --accent-foreground: var(--ink);
+  --destructive: var(--acct);
+  --destructive-foreground: #ffffff;
+  --border: rgba(30, 42, 36, 0.18);
+  --input: rgba(30, 42, 36, 0.22);
+  --ring: var(--pen);
+
+  /* Charts read as ledger ink, never as a rainbow. */
+  --chart-1: var(--ledger);
+  --chart-2: var(--acct);
+  --chart-3: var(--pen);
+  --chart-4: var(--ink);
+  --chart-5: var(--ink-muted);
+
+  /* The plan caps radius at 4px — nothing in a ledger is pill-shaped. */
+  --radius: 0.25rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  /* Domain tokens: bg-paper, bg-bar, bg-bar-locked, text-ink, text-ledger, text-acct, text-pen */
+  --color-paper: var(--paper);
+  --color-bar: var(--bar);
+  --color-bar-locked: var(--bar-locked);
+  --color-ink: var(--ink);
+  --color-ledger: var(--ledger);
+  --color-acct: var(--acct);
+  --color-pen: var(--pen);
+
+  /* Three type roles: Archivo (UI), IBM Plex Mono (every numeral), Bitter (display). */
+  --font-sans: var(--font-archivo), system-ui, sans-serif;
+  --font-mono: var(--font-plex), ui-monospace, monospace;
+  --font-display: var(--font-bitter), Georgia, serif;
+  --font-heading: var(--font-bitter), Georgia, serif;
+
+  --radius-sm: calc(var(--radius) * 0.5);
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.5);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+    font-size: 0.875rem;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Money is the product: every figure is tabular, always. */
+  input,
+  td,
+  th,
+  .font-mono,
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+/* The only motion in the product — and it yields. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
