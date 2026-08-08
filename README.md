@@ -23,6 +23,8 @@ docker compose up -d mongo     # local MongoDB 8, single-node replica set
 cp .env.example .env.local     # the MONGODB_URI in it already points at that container
                                # then set AUTH_SECRET: openssl rand -base64 32
 npm run seed                   # both demo accounts + the assignment's sample data (idempotent)
+                               # it reads .env.local only — never .env — so a stray
+                               # production URI cannot be what this script resets
 npm run dev                    # http://localhost:3000
 ```
 
@@ -83,16 +85,16 @@ The `deploy` job is dormant today — the secrets are not set, and the Git integ
 
 ## Tests
 
-`npm test` (Vitest, real mongod via `mongodb-memory-server` — the first run downloads the binary). 66 tests, 8 files.
+`npm test` (Vitest, real mongod via `mongodb-memory-server` — the first run downloads the binary). 74 tests, 8 files.
 
 | File                                             | Proves                                                                                                                                                           |
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tests/report.sample.test.ts`                    | The PDF's exact table: −200/−4.00%, +500/+2.50%, −5,000/−100%, −200/−1.00%                                                                                       |
+| `tests/report.sample.test.ts`                    | The PDF's exact table: −200/−4.00%, +500/+2.50%, −5,000/−100%, −200/−1.00% — and that the CSV export prints the same figures, quoted and formula-safe            |
 | `tests/variance.test.ts`                         | plan = 0, missing actual, unbudgeted spend, minor-unit totals, accounting formatting                                                                             |
 | `tests/locking.test.ts`                          | `PERIOD_LOCKED` is enforced in the domain layer, not by hiding a button                                                                                          |
 | `tests/importCsv.test.ts`                        | Bad month, unknown category, locked-month row, bad header, blank lines, commit atomicity — plus that a 200-row file costs the same reads as a 2-row one          |
 | `tests/scoping.test.ts` · `tests/routes.test.ts` | User B cannot list, read, report on or delete user A's rows; every route's status envelope; and that a write — only a write — expires that tenant's cached reads |
-| `tests/security.test.ts`                         | The hardening below, each test named for the attack it closes                                                                                                    |
+| `tests/security.test.ts`                         | The hardening below, each test named for the attack it closes, plus sign-up: address normalising, the duplicate refusal, and the weak-password gate              |
 | `tests/indexes.test.ts`                          | `explain("executionStats")` on the repo's own queries: `IXSCAN` on `{userId, month, categoryId}`, no blocking `SORT`, keys examined ≈ rows returned              |
 
 The index test exists because that second Plan index is the one thing that rots silently. The unique `{userId, categoryId, month}` cannot serve the report — `categoryId` sits between the equality and the month range, so Mongo walks every key the tenant owns while still reporting `IXSCAN`. `{userId, month, categoryId}` turns the range back into an index bound and puts the group key in the index; the test asserts the index _by name_ and counts keys, so reordering it fails here rather than in production.
@@ -107,6 +109,7 @@ Nothing below was added by weakening anything above it; `tests/security.test.ts`
 - **Timing-safe sign-in** — an unknown email is compared against a fixed dummy hash, so a miss costs the same bcrypt round as a wrong password and the form is not a user-enumeration oracle.
 - **Rate limiting** — `src/lib/ratelimit.ts`, ten tries per address per 15 minutes, checked before the database is touched; a successful sign-in re-opens the window.
 - **`sanitizeFilter`** — set at module scope in `src/lib/db.ts`, so `{$ne: null}` arriving as a value is wrapped in `$eq` and matches nothing. The two deliberate month-range filters mark themselves with `mongoose.trusted()`.
+- **CSV formula injection**, closed in `src/lib/csv.ts` — a category called `=HYPERLINK(…)` is a live formula when the export is opened in Excel, Sheets or Numbers, so a text field opening with `= + - @` is prefixed with an apostrophe. Amounts are exempt by _type_, not by inspection, which is what keeps `-200` an amount.
 - **1 MB body guard** and **`cache-control: no-store` + `x-request-id`** on every response — all three live in the one `withRoute` wrapper in `src/lib/route.ts`, not in each handler.
 
 ## API surface
@@ -123,6 +126,7 @@ Money in responses is **integer minor units**; requests take major units (`amoun
 | `POST /api/actuals`         | `{ categoryId, month, amount, note? }` | `{ actual }`                                                    |
 | `DELETE /api/actuals/:id`   | —                                      | `{ deleted: 1 }`                                                |
 | `GET /api/report`           | `?from=&to=` (YYYY-MM)                 | `{ rows, totals, lockedMonths }`                                |
+| `GET /api/report/export`    | `?from=&to=` (YYYY-MM)                 | the same rows as `text/csv`, as a download                      |
 | `GET /api/locks`            | `?from=&to=`                           | `{ lockedMonths: string[] }`                                    |
 | `POST /api/locks`           | `{ month }`                            | `{ month, lockedAt }`                                           |
 | `DELETE /api/locks/:month`  | —                                      | `{ month, unlocked: true }`                                     |
@@ -193,7 +197,8 @@ The favicon (`src/app/icon.svg`) is the signature element shrunk to 16px: varian
 - **One entry per category×month, everywhere.** Every collection carries a unique index for its own notion of "the same thing twice": `{userId, normalizedName}` on categories, `{userId, categoryId, month}` on plans _and_ actuals, `{userId, month}` on locks, `{email}` on users. Actuals used to be the exception — a cell could hold many entries, so a double-submitted form, a CSV that repeated a row, or the same file imported twice all doubled a month's spend and the report summed it without complaint. Writes upsert onto the cell now, the import flags a file that names one cell twice, and the database refuses the rest. `npm run dedupe:actuals` migrates a database written before that (amounts summed, so no variance figure moves) and builds the index in the foreground — a unique index cannot be built over existing duplicates, and Mongoose swallows that failure silently.
 - **"Same name" is `repo.normalizeName`, not string equality.** Case, unicode form and runs of whitespace are folded before the unique index sees a category name, so "Marketing", "marketing " and "Marketing Ops" cannot become rows that render identically in every list. One definition, used by category creation and by the CSV import's row lookup.
 - **Category CRUD is create + list.** Rename/delete are out of scope (a delete would need a policy for orphaned plans and actuals, which the brief does not ask for).
-- **Auth is email + password only** — no reset, no verification, no roles. The brief says that is sufficient, so the time went into authorization instead.
+- **Auth is email + password only** — sign up at `/signup`, sign in at `/login`, and no reset, no verification, no roles. The brief says that is sufficient, so the time went into authorization instead.
+- **The password policy is one function, enforced server-side.** `src/lib/password.ts` scores a candidate (length first, character variety as a single bonus, a blocklist of the most-guessed passwords, and a check that the address is not inside its own password), `createUser` refuses anything below "Fair", and the sign-up form's meter renders **the same function** — so the bar the user sees is the bar the server holds. Sign-IN never applies it: an account made under an older policy has to keep working, and refusing at the sign-in form would tell an attacker their guess was well-formed but wrong. Telling a new user "that address already has an account" is a deliberate enumeration leak, rate-limited on the same counter as sign-in; closing it properly needs verification mail, which is out of scope.
 - **CSV import needs a replica set** because the commit is a transaction. Atlas is one by default; a bare local `mongod` is not — hence the `--replSet` flag in `docker-compose.yml`.
 - **Money is integer minor units end to end.** Nothing but `src/lib/money.ts` converts, and the UI never does arithmetic — it renders numbers the server computed.
 - Sized for one bookkeeper's ledger, not a data warehouse: ranges are capped at 10 years and an unfiltered actuals read is capped at 500 rows.
