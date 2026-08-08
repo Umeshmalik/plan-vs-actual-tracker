@@ -1,0 +1,45 @@
+# Local MongoDB for development and review — no Atlas account needed.
+#
+#   docker compose up -d mongo     # database only, then `npm run dev` on the host
+#   docker compose up --build      # database + the app in its production image
+#
+# It is a SINGLE-NODE REPLICA SET, not a standalone: the CSV commit runs in a
+# transaction, and Mongo only offers transactions on a replica set. The health
+# check does the one-time rs.initiate, so there is no second command to forget.
+services:
+  mongo:
+    image: mongo:8
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      # Idempotent: initiates the set on first boot, reports ok on every boot after.
+      test: >
+        mongosh --quiet --eval
+        "try { rs.status().ok } catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}).ok }"
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  app:
+    build:
+      context: .
+      args:
+        GIT_SHA: local
+    ports:
+      - "3000:3000"
+    environment:
+      # Inside the compose network the replica set member IS reachable as mongo:27017.
+      MONGODB_URI: mongodb://mongo:27017/pva?replicaSet=rs0
+      # Dev-only value. Real deployments read this from AWS Secrets Manager.
+      AUTH_SECRET: local-development-secret-not-for-production
+      GIT_SHA: local
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+volumes:
+  mongo-data:
