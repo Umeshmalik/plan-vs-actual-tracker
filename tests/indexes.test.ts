@@ -1,0 +1,112 @@
+/**
+ * Index regression guard. Not a benchmark — it asserts the one thing that
+ * silently rots: that the planner still answers the report's range query and
+ * the actuals drill-down from an index, reading roughly as many keys as it
+ * returns rows rather than walking everything the tenant owns.
+ *
+ * The queries here are the repo methods themselves (projection, sort and limit
+ * included), so this fails if someone changes the query shape as well as if
+ * someone drops the index.
+ */
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { MongoMemoryReplSet } from "mongodb-memory-server";
+import mongoose, { Types, trusted } from "mongoose";
+import { M } from "../src/domain/models";
+import { ScopedRepo } from "../src/domain/repo";
+
+let mongod: MongoMemoryReplSet;
+let repo: ScopedRepo;
+let userId: Types.ObjectId;
+let catIds: Types.ObjectId[];
+
+// Two years x five categories = 120 plans and 120 actuals, against a 3-month
+// report window. Wide enough that "scanned the user's whole history" and
+// "seeked to the range" are not the same number.
+const MONTHS = Array.from(
+  { length: 24 },
+  (_, i) => `20${26 + Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, "0")}`
+);
+const FROM = "2026-01";
+const TO = "2026-03";
+
+interface Explain {
+  queryPlanner: { winningPlan: unknown };
+  executionStats: { nReturned: number; totalKeysExamined: number; totalDocsExamined: number };
+}
+
+/** Run the repo's own query through explain() instead of a retyped copy. */
+async function explain(query: unknown) {
+  const ex = (await (query as { explain(v: string): Promise<Explain> }).explain("executionStats")) as Explain;
+  return { plan: JSON.stringify(ex.queryPlanner.winningPlan), ...ex.executionStats };
+}
+
+beforeAll(async () => {
+  mongod = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+  await mongoose.connect(mongod.getUri());
+  // explain() reports on the indexes that exist, so wait for them to be built
+  // rather than trusting autoIndex to have won the race.
+  await Promise.all([M.Plan.init(), M.Actual.init()]);
+
+  userId = new Types.ObjectId();
+  repo = new ScopedRepo(userId);
+  catIds = Array.from({ length: 5 }, () => new Types.ObjectId());
+
+  const cells = MONTHS.flatMap(month =>
+    catIds.map(categoryId => ({ userId, categoryId, month, amountMinor: 1000 }))
+  );
+  await M.Plan.insertMany(cells);
+  await M.Actual.insertMany(cells.map(c => ({ ...c, source: "manual" })));
+});
+
+afterAll(async () => {
+  await mongoose.disconnect();
+  await mongod.stop();
+});
+
+describe("the hot reads are index seeks, not collection scans", () => {
+  it("the report's plan range uses {userId, month, categoryId}", async () => {
+    const { plan, nReturned, totalKeysExamined, totalDocsExamined } = await explain(repo.listPlans(FROM, TO));
+
+    expect(plan).toContain("IXSCAN");
+    expect(plan).not.toContain("COLLSCAN");
+    // The specific index, so reordering its keys fails here and not in prod:
+    // the unique {userId, categoryId, month} would also report IXSCAN while
+    // scanning every key the user owns, because categoryId sits between the
+    // equality and the range. Hence the key count, not just the stage name.
+    expect(plan).toContain("userId_1_month_1_categoryId_1");
+    expect(nReturned).toBe(3 * catIds.length);
+    expect(totalKeysExamined).toBeLessThanOrEqual(nReturned * 2);
+    expect(totalDocsExamined).toBeLessThanOrEqual(nReturned * 2);
+  });
+
+  it("the report's actual range uses {userId, month, categoryId}", async () => {
+    // The same $match runReport sends to the actuals side of the $unionWith.
+    const query = M.Actual.find({ userId, month: trusted({ $gte: FROM, $lte: TO }) }).lean();
+    const { plan, nReturned, totalKeysExamined, totalDocsExamined } = await explain(query);
+
+    expect(plan).toContain("IXSCAN");
+    expect(plan).not.toContain("COLLSCAN");
+    expect(plan).toContain("userId_1_month_1_categoryId_1");
+    expect(nReturned).toBe(3 * catIds.length);
+    expect(totalKeysExamined).toBeLessThanOrEqual(nReturned * 2);
+    expect(totalDocsExamined).toBeLessThanOrEqual(nReturned * 2);
+  });
+
+  it("listActuals seeks the exact category x month cell", async () => {
+    const { plan, nReturned, totalKeysExamined, totalDocsExamined } = await explain(
+      repo.listActuals({ month: FROM, categoryId: String(catIds[0]) })
+    );
+
+    expect(plan).toContain("IXSCAN");
+    expect(plan).not.toContain("COLLSCAN");
+    expect(nReturned).toBe(1);
+    expect(totalKeysExamined).toBeLessThanOrEqual(2);
+    expect(totalDocsExamined).toBeLessThanOrEqual(2);
+  });
+
+  it("listActuals caps an unfiltered read at its documented ceiling", async () => {
+    const all = await repo.listActuals({});
+    expect(all).toHaveLength(MONTHS.length * catIds.length); // 120, under the 500 ceiling: nothing hidden yet
+    expect(await repo.listActuals({}, 10)).toHaveLength(10); // the ceiling is real
+  });
+});
