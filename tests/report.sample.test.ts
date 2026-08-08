@@ -11,7 +11,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import mongoose, { Types } from "mongoose";
 import { ScopedRepo } from "../src/domain/repo";
-import { runReport } from "../src/domain/report";
+import { reportCsv, runReport } from "../src/domain/report";
 import { toMinor } from "../src/lib/money";
 
 let mongod: MongoMemoryReplSet;
@@ -55,5 +55,33 @@ describe("report matches the assignment's sample table", () => {
     });
     expect(cell("Payroll", "2026-02")).toMatchObject({ variance: toMinor(-200), variancePct: -1 });
     expect(rows).toHaveLength(4);
+  });
+
+  it("exports the same four rows, in major units, with a totals line", async () => {
+    const csv = reportCsv(await runReport(repo, "2026-01", "2026-03"));
+
+    // An export that disagrees with the screen is worse than no export, so this
+    // asserts the whole file rather than a row of it. CRLF: Excel on Windows
+    // reads a bare-LF file as one long row.
+    expect(csv.split("\r\n")).toEqual([
+      "Category,Month,Plan,Actual,Variance,Variance %,Closed",
+      "Marketing,2026-01,5000,4800,-200,-4,no",
+      "Marketing,2026-02,5000,0,-5000,-100,no",
+      "Payroll,2026-01,20000,20500,500,2.5,no",
+      "Payroll,2026-02,20000,19800,-200,-1,no",
+      "Range total,,50000,45100,-4900,-9.8,",
+    ]);
+  });
+
+  it("quotes a comma in a name and defuses a cell a spreadsheet would execute", async () => {
+    // `=`-leading text is a live formula in Excel/Sheets/Numbers; a comma in a
+    // category silently adds a column. Both come from user input.
+    const hostile = await repo.createCategory('=HYPERLINK("evil"), Ops');
+    await repo.upsertPlan(String(hostile._id), "2026-04", toMinor(10));
+
+    const line = reportCsv(await runReport(repo, "2026-04", "2026-04")).split("\r\n")[1];
+    expect(line).toBe('"\'=HYPERLINK(""evil""), Ops",2026-04,10,0,-10,-100,no');
+
+    await repo.deletePlan(String(hostile._id), "2026-04");
   });
 });

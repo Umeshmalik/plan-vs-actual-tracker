@@ -9,7 +9,7 @@
  * action on the empty state. Nothing here imitates a component with utilities.
  */
 import Link from "next/link";
-import { Lock, Minus, Receipt, Target, TrendingDown, TrendingUp } from "lucide-react";
+import { Download, Lock, Minus, Receipt, Target, TrendingDown, TrendingUp } from "lucide-react";
 import { requireRepo } from "@/lib/auth";
 import { resolveRange, type SearchParams } from "@/lib/range";
 import { formatMonthLabel, monthRange } from "@/lib/month";
@@ -65,11 +65,25 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
   const { rows, totals, lockedMonths } = await getReport(String(repo.uid), from, to);
 
   const title = (
-    <div className="mb-5">
-      <h1 className="font-display text-xl font-semibold tracking-tight">Variance report</h1>
-      <p className="font-mono text-xs text-muted-foreground">
-        {formatMonthLabel(from)} – {formatMonthLabel(to)}
-      </p>
+    <div className="mb-5 flex items-end justify-between gap-4">
+      <div>
+        <h1 className="font-display text-xl font-semibold tracking-tight">Variance report</h1>
+        <p className="font-mono text-xs text-muted-foreground">
+          {formatMonthLabel(from)} – {formatMonthLabel(to)}
+        </p>
+      </div>
+      {rows.length > 0 && (
+        // A plain link, not a fetch-then-blob: the route already answers with
+        // `content-disposition: attachment`, so the browser downloads it and no
+        // client JavaScript has to hold the file in memory. `download` keeps the
+        // filename if a browser ever ignores the header.
+        <Button asChild variant="outline" size="sm">
+          <a href={`/api/report/export?from=${from}&to=${to}`} download>
+            <Download aria-hidden />
+            <span className="max-sm:hidden">Export CSV</span>
+          </a>
+        </Button>
+      )}
     </div>
   );
 

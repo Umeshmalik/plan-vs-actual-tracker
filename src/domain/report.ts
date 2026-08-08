@@ -9,6 +9,8 @@
  */
 import { Types } from "mongoose";
 import { M } from "./models";
+import { toCsv } from "../lib/csv";
+import { toMajor } from "../lib/money";
 import { buildRow, rangeTotals, type VarianceRow } from "../lib/variance";
 import type { ScopedRepo } from "./repo";
 
@@ -105,4 +107,54 @@ export async function runReport(repo: ScopedRepo, from: string, to: string) {
     totals: rangeTotals(rows),
     lockedMonths: locks.map(l => l.month).sort(),
   };
+}
+
+export type Report = Awaited<ReturnType<typeof runReport>>;
+
+/**
+ * The report as a spreadsheet: the same rows, the same order, the same totals
+ * line the table foots with — an export that disagrees with the screen is worse
+ * than no export. Two deliberate differences, both for the reader on the other
+ * end:
+ *
+ * - Amounts are MAJOR units, and stay NUMBERS rather than formatted strings.
+ *   Minor units are the app's internal contract; a spreadsheet wants a cell it
+ *   can sum. Number is also what keeps `-200` an amount: csv.ts defuses strings
+ *   that open with `-` (formula injection) and skips numbers by type.
+ * - A null variance % (plan = 0) is an empty cell, not the `—` the UI prints.
+ *   Empty is what AVERAGE() skips; an em dash is text that poisons the column.
+ *
+ * `closed` carries the lock state, which the table shows as a badge — otherwise
+ * the export loses the reason a row cannot be edited.
+ */
+export function reportCsv({ rows, totals, lockedMonths }: Report): string {
+  const locked = new Set(lockedMonths);
+  const money = (minor: number) => toMajor(minor);
+  // Round the ratio, do not truncate the number: -9.120000000000001 is a float
+  // artefact, not a figure anyone wants in a cell.
+  const pct = (v: number | null) => (v === null ? null : Number(v.toFixed(2)));
+
+  return toCsv(
+    ["Category", "Month", "Plan", "Actual", "Variance", "Variance %", "Closed"],
+    [
+      ...rows.map(r => [
+        r.categoryName,
+        r.month,
+        money(r.plan),
+        money(r.actual),
+        money(r.variance),
+        pct(r.variancePct),
+        locked.has(r.month) ? "yes" : "no",
+      ]),
+      [
+        "Range total",
+        "",
+        money(totals.plan),
+        money(totals.actual),
+        money(totals.variance),
+        pct(totals.variancePct),
+        "",
+      ],
+    ]
+  );
 }
