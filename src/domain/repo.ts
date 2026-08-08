@@ -94,11 +94,18 @@ export class ScopedRepo {
   }
 
   // -- plans (upsert = idempotent by design) --------------------------------
+  /** Projection = the CONTRACT's plan shape. userId and __v are internal and
+   *  every other read here projects; this one used to hand back the raw doc. */
   upsertPlan(categoryId: string, month: string, amountMinor: number) {
     return M.Plan.findOneAndUpdate(
       this.scope({ categoryId, month }),
       { $set: { amountMinor } },
-      { upsert: true, returnDocument: "after", setDefaultsOnInsert: true }
+      {
+        upsert: true,
+        returnDocument: "after",
+        setDefaultsOnInsert: true,
+        projection: { categoryId: 1, month: 1, amountMinor: 1 },
+      }
     ).lean();
   }
   deletePlan(categoryId: string, month: string) {
