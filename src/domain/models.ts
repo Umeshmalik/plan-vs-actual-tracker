@@ -115,8 +115,19 @@ const Actual = new Schema<ActualDoc>(
 // Matches the report's query shape exactly: filter userId+month range, group by category.
 // Serves the drill-down too — repo.listActuals({month, categoryId}) is three
 // equalities against this same prefix order, and the {categoryId}-only variant
-// still seeks on userId instead of scanning the collection.
-Actual.index({ userId: 1, month: 1, categoryId: 1 });
+// still seeks: month has a couple of dozen distinct values, so the planner walks
+// one interval per month rather than the whole collection (measured in
+// tests/indexes.test.ts — 264 keys read to return 240 rows).
+//
+// createdAt is the trailing key, and it is there for the sort, not the filter.
+// listActuals orders by {month, createdAt} and caps at ACTUALS_LIMIT; with the
+// three equalities pinned, month is constant and createdAt is the only thing
+// left to order by, so the index supplies it. Without this key the exact-cell
+// read ends in a blocking SORT — the one query allowed to return 500 rows would
+// buffer and sort all 500 in memory before the limit could bite. With it, the
+// plan is a plain LIMIT over the scan. The report's range $match is untouched:
+// it uses the {userId, month, categoryId} prefix exactly as before.
+Actual.index({ userId: 1, month: 1, categoryId: 1, createdAt: 1 });
 
 const PeriodLock = new Schema<PeriodLockDoc>({
   userId: { type: Schema.Types.ObjectId, required: true },

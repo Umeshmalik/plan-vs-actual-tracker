@@ -15,8 +15,8 @@ import { resolveRange, type SearchParams } from "@/lib/range";
 import { formatMonthLabel, monthRange } from "@/lib/month";
 import { formatPct } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { getReport } from "@/lib/reads";
 import type { VarianceRow } from "@/lib/variance";
-import { runReport } from "@/domain/report";
 import { MoneyText } from "@/components/MoneyText";
 import { VarianceBar } from "@/components/VarianceBar";
 import { DataTable, type Column } from "@/components/DataTable";
@@ -61,8 +61,8 @@ function SummaryCard({
 export default async function ReportPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   const { from, to } = resolveRange(sp);
-  const repo = await requireRepo();
-  const { rows, totals, lockedMonths } = await runReport(repo, from, to);
+  const repo = await requireRepo(); // authenticate first — the cache never decides who is asking
+  const { rows, totals, lockedMonths } = await getReport(String(repo.uid), from, to);
 
   const title = (
     <div className="mb-5">

@@ -8,6 +8,7 @@ import Link from "next/link";
 import { requireRepo } from "@/lib/auth";
 import { formatMonthLabel, isMonth, monthRange } from "@/lib/month";
 import { resolveRange, type SearchParams } from "@/lib/range";
+import { getActuals, getCategories, getLockedMonths } from "@/lib/reads";
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { ActualForm } from "./ActualForm";
@@ -18,9 +19,10 @@ const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 export default async function Page({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams; // Next 16: searchParams is a Promise
   const { from, to } = resolveRange(sp);
-  const repo = await requireRepo();
+  const repo = await requireRepo(); // authenticate first — the cache never decides who is asking
+  const uid = String(repo.uid);
 
-  const categories = (await repo.listCategories()).map(c => ({ id: String(c._id), name: c.name }));
+  const categories = (await getCategories(uid)).map(c => ({ id: c._id, name: c.name }));
 
   // Default inside the range; a month typed outside it still works, it just is not the default.
   const wanted = one(sp.month);
@@ -42,10 +44,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
     );
   }
 
-  const [locked, actuals] = await Promise.all([
-    repo.isLocked(month),
-    repo.listActuals({ month, categoryId: category.id }),
+  // A one-month range IS the lock question, so it reuses the cached read the
+  // report and the plans grid already fill rather than a second exists() query.
+  const [lockedMonths, actuals] = await Promise.all([
+    getLockedMonths(uid, month, month),
+    getActuals(uid, month, category.id),
   ]);
+  const locked = lockedMonths.length > 0;
 
   return (
     <div className="flex flex-wrap items-start gap-6">
@@ -53,7 +58,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
         categories={categories}
         categoryId={category.id}
         month={month}
-        locked={Boolean(locked)}
+        locked={locked}
         from={from}
         to={to}
       />
@@ -61,10 +66,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
         <ActualsList
           caption={`${category.name} · ${formatMonthLabel(month)}`}
           month={month}
-          locked={Boolean(locked)}
+          locked={locked}
           rows={actuals.map(a => ({
-            id: String(a._id),
-            date: a.createdAt.toISOString().slice(0, 10),
+            id: a._id,
+            date: a.createdAt.slice(0, 10), // already an ISO string out of the cache
             note: a.note ?? "",
             amountMinor: a.amountMinor,
           }))}

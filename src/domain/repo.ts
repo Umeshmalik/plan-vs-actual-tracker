@@ -52,6 +52,16 @@ export class ScopedRepo {
   findCategoryByName(normalizedName: string) {
     return M.Category.findOne(this.scope({ normalizedName })).lean();
   }
+  /**
+   * The whole name -> category map in one read. The CSV import resolves every
+   * row against this instead of a findOne per row: a 20k-row file went from
+   * 20k round trips to one, and a user holds tens of categories, so the map is
+   * a few kilobytes however big the file is.
+   */
+  async categoriesByName() {
+    const cats = await M.Category.find(this.scope({}), { name: 1, normalizedName: 1 }).lean();
+    return new Map(cats.map(c => [c.normalizedName, c]));
+  }
 
   // -- plans (upsert = idempotent by design) --------------------------------
   upsertPlan(categoryId: string, month: string, amountMinor: number) {
@@ -94,6 +104,26 @@ export class ScopedRepo {
     // Array form so the session actually reaches the write (Model.create with
     // an options object only honours `session` in the array overload).
     return M.Actual.create([{ ...doc, userId: this.userId }], { session }).then(d => d[0]);
+  }
+  /**
+   * The import's write, and the only bulk one. insertMany sends the whole batch
+   * in one command instead of the await-per-row loop it replaces — same
+   * documents, same transaction, same validation, one round trip.
+   */
+  createActuals(
+    docs: {
+      categoryId: string;
+      month: string;
+      amountMinor: number;
+      source: "manual" | "import";
+      importBatchId?: string;
+    }[],
+    session?: ClientSession
+  ) {
+    return M.Actual.insertMany(
+      docs.map(d => ({ ...d, userId: this.userId })),
+      { session }
+    );
   }
   /** Projection = the CONTRACT's actual shape plus importBatchId (the import
    *  tests group by it); userId and updatedAt are internal. */
@@ -141,6 +171,15 @@ export class ScopedRepo {
   /** trusted(): see listPlans. Every caller reads `month` and nothing else. */
   listLocks(from: string, to: string) {
     return M.PeriodLock.find(this.scope({ month: trusted({ $gte: from, $lte: to }) }), { month: 1 }).lean();
+  }
+  /**
+   * Every closed month, as a set. Same trade as categoriesByName(): the import
+   * asks "is this row's month locked?" once per row, and a user holds tens of
+   * locks, so one read answers all of them.
+   */
+  async lockedMonths() {
+    const locks = await M.PeriodLock.find(this.scope({}), { month: 1 }).lean();
+    return new Set(locks.map(l => l.month));
   }
 
   get uid() {
