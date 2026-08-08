@@ -1,0 +1,14 @@
+# Build output and lockfiles
+node_modules
+.next
+package-lock.json
+*.tsbuildinfo
+next-env.d.ts
+
+# Generated: shadcn owns src/components/ui, and globals.css is the token layer.
+# Reformatting either only makes the next `shadcn add` diff noisy.
+src/components/ui
+src/app/globals.css
+
+# design/prototype.html is the visual contract — kept exactly as authored.
+design

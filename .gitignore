@@ -1,0 +1,12 @@
+node_modules/
+.next/
+.env
+.env*.local
+*.tsbuildinfo
+.DS_Store
+
+# Vercel CLI writes project ids and pulled env values here.
+.vercel/
+
+# Local browser-automation artefacts.
+.playwright-mcp/
