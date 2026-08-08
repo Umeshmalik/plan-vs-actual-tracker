@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Plan vs Actual">
+  <!--
+    The signature element of the product, shrunk to a tab: variance bars on a
+    shared zero axis. Under plan extends left in ledger green, over plan extends
+    right in accounting red, on paper white — the same three tokens the app
+    uses, so the tab reads as the same object as the report.
+    Bars are chunky and the axis sits on top of them, because at 16px the
+    silhouette is all that survives.
+  -->
+  <rect width="32" height="32" rx="5" fill="#F7F8F3" />
+  <rect x="6" y="7" width="10" height="5" fill="#2F7D5B" />
+  <rect x="16" y="14" width="13" height="5" fill="#B23A2E" />
+  <rect x="10" y="21" width="6" height="5" fill="#2F7D5B" />
+  <rect x="15.3" y="4" width="1.4" height="24" fill="#1E2A24" />
+</svg>
