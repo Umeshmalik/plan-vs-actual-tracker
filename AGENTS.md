@@ -12,6 +12,8 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 This file is the single source of agent guidance for this repo. `CLAUDE.md` is one line that imports it, so edit **this** file, not that one. `README.md` holds the full API surface, the decisions table and the deployment guide — read it for anything not covered here.
 
+Deployed at <https://track-plan-vs-actual.vercel.app> (production, `main`, no Deployment Protection). `GET /api/health` needs no session; every other route and screen requires one, and the demo logins are in `README.md`. Treat it as live production data — read from it freely, but do not point writes or `npm run seed` at it while checking behaviour.
+
 ## Commands
 
 ```bash

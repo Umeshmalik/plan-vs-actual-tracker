@@ -57,7 +57,7 @@ reachable from anywhere, and the seed is a script, not a route:
 MONGODB_URI='mongodb+srv://…/pva' npm run seed
 ```
 
-Check it: `curl https://<your-app>.vercel.app/api/health` → `{"ok":true,"db":"up"}`
+Check it: `curl https://track-plan-vs-actual.vercel.app/api/health` → `{"ok":true,"db":"up","version":"dev"}` (substitute your own host when deploying a fresh project)
 
 ## 3. Making tests gate the deploy
 

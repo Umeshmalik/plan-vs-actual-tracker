@@ -2,7 +2,7 @@
 
 Monthly spending targets vs actuals, with variance reporting, CSV import and locked periods.
 
-**Live URL:** <https://plan-vs-actual-tracker-umeshmaliks-projects.vercel.app> — deployed from [`umeshmalik/plan-vs-actual-tracker`](https://github.com/umeshmalik/plan-vs-actual-tracker) on every push to `main`. _(If that link bounces you to a Vercel sign-in, Deployment Protection is still on — see [Deploying](#deploying).)_
+**Live URL:** <https://track-plan-vs-actual.vercel.app> — deployed from [`umeshmalik/plan-vs-actual-tracker`](https://github.com/umeshmalik/plan-vs-actual-tracker) on every push to `main`. Deployment Protection is off, so the link opens straight onto the app's own sign-in; sign in with either account below and everything in this README can be exercised against it. _(If a link ever bounces you to a Vercel sign-in instead, Protection has been re-enabled — see [Deploying](#deploying).)_
 
 | Demo login          | Password         | What it shows                                                            |
 | ------------------- | ---------------- | ------------------------------------------------------------------------ |
@@ -57,9 +57,9 @@ The one step that is still local, because Atlas is reachable from anywhere and t
 MONGODB_URI='mongodb+srv://…/pva' npm run seed     # idempotent; safe to re-run
 ```
 
-Then `curl https://<your-app>.vercel.app/api/health` → `{"ok":true,"db":"up"}`.
+Then `curl https://track-plan-vs-actual.vercel.app/api/health` → `{"ok":true,"db":"up","version":"dev"}`. (`version` is `dev` because the Git integration builds without setting `GIT_SHA`; the CI deploy job sets it to the commit SHA.)
 
-**Deployment Protection is on by default**, which sends anyone not signed into the Vercel account to Vercel SSO — including a reviewer opening the link. Turn it off before sharing the URL: Vercel → Project → Settings → Deployment Protection → **Vercel Authentication: Disabled**. The app's own sign-in is the access control; Vercel's is a second, unrelated gate.
+**Deployment Protection is on by default**, which sends anyone not signed into the Vercel account to Vercel SSO — including a reviewer opening the link. It has been turned off for the URL above (Vercel → Project → Settings → Deployment Protection → **Vercel Authentication: Disabled**), which is the step to repeat on any new project before sharing it. The app's own sign-in is the access control; Vercel's is a second, unrelated gate.
 
 `next.config.mjs` drops `output: "standalone"` when `VERCEL` is set, and `src/lib/db.ts` shrinks the connection pool to 3 with no idle sockets — a wide pool per function instance is how a 500-connection M0 cluster runs out. `infra/README.md` has the Atlas setup, the deploy-gating options and an honest list of what free tier gives up (no PITR backup, `0.0.0.0/0` network access, cold starts, a 60s function ceiling).
 
@@ -154,12 +154,14 @@ Two constraints shape the module: a cached function may not read cookies, so the
 
 Granularity is **one month per user** (`periodLocks` is unique on `{userId, month}`). One guard, `assertPeriodUnlocked()` in `src/domain/locking.ts`, is called from every mutating path: plan upsert, plan delete, actual create, actual delete, and CSV commit (once per distinct month in the batch). The UI also disables locked controls, but the API is the enforcement point:
 
-```
-$ curl -i -X PUT https://<app>/api/plans -b cookies.txt \
-    -H 'content-type: application/json' \
-    -d '{"categoryId":"6797a1c0f3b2a41d9c0e5511","month":"2026-01","amount":5000}'
+Signed in as `demo@example.com`, whose January is closed — `cookies.txt` is the jar from the sign-in, and the id comes from `GET /api/categories`, because an unknown category is rejected by `requireCategory()` one line earlier and answers `422 UNKNOWN_CATEGORY` instead:
 
-HTTP/1.1 409 Conflict
+```
+$ curl -i -X PUT https://track-plan-vs-actual.vercel.app/api/plans -b cookies.txt \
+    -H 'content-type: application/json' \
+    -d '{"categoryId":"6a77980c443dd6363ed7525c","month":"2026-01","amount":5000}'
+
+HTTP/2 409
 content-type: application/json
 
 {"error":{"code":"PERIOD_LOCKED","message":"2026-01 is locked. Unlock the period before editing.","details":{"month":"2026-01"}}}
