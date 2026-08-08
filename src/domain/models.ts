@@ -87,7 +87,26 @@ const Category = new Schema<CategoryDoc>(
 // repo.normalizeName, which folds case, unicode form and runs of whitespace so
 // "Marketing  Ops" cannot sit next to "Marketing Ops" as two categories that
 // render identically.
-Category.index({ userId: 1, normalizedName: 1 }, { unique: true });
+//
+// PARTIAL, and that is load-bearing rather than fussy. A unique index is built
+// over EVERY document in the collection, so one document that lacks both keys
+// indexes as (null, null) — and a second one collides with it, which aborts the
+// build. Mongoose builds indexes in the background and swallows that failure,
+// so the app comes up with no constraint at all and nothing on screen to say
+// so. That is exactly what happened in production: this collection turned out
+// to be shared with another application whose documents have no `userId` and no
+// `normalizedName`, six of them, so the index never existed and `npm run seed`
+// re-created "Marketing", "Payroll" and "Tools" on every run.
+//
+// `normalizedName: {$type: "string"}` is true of every document this app writes
+// (the field is required above) and false for anything that is not ours, so the
+// constraint covers precisely the rows it is meant to and can always be built.
+// Fixing the shared database is the real repair — see AUDIT.md — but a
+// constraint that cannot be defeated by a neighbour is worth having regardless.
+Category.index(
+  { userId: 1, normalizedName: 1 },
+  { unique: true, partialFilterExpression: { normalizedName: { $type: "string" } } }
+);
 
 const Plan = new Schema<PlanDoc>(
   {
