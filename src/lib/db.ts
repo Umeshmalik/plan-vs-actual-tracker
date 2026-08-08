@@ -40,19 +40,32 @@ export function connectDb(): Promise<typeof mongoose> {
     // connection across invocations.
     const serverless = Boolean(process.env.VERCEL);
 
-    globalThis.__pvaMongoose = mongoose.connect(uri, {
-      maxPoolSize: serverless ? 3 : 10,
-      // A container keeps one socket warm so the first request after an idle
-      // spell skips the TCP + TLS + auth handshake. A function instance that is
-      // about to be frozen should hold nothing.
-      minPoolSize: serverless ? 0 : 1,
-      // Fail fast rather than hang: a request that cannot find a primary in 8s
-      // becomes a 500 the caller can retry, not a socket held open for minutes.
-      serverSelectionTimeoutMS: 8_000,
-      // Reap a stalled socket well before any upstream idle timeout can strand
-      // it. Comfortably above the slowest query here (the report aggregation).
-      socketTimeoutMS: 45_000,
-    });
+    /**
+     * The `.catch` is not error handling — it is cache eviction. A rejected
+     * promise left in the global is a permanent one: every later request on
+     * that instance awaits the same rejection and 503s, so one unlucky cold
+     * start (a DNS blip, Atlas still waking) poisons the instance for its whole
+     * life instead of costing a single request. Clearing it lets the next
+     * request dial again. The rethrow keeps this caller's failure a failure.
+     */
+    globalThis.__pvaMongoose = mongoose
+      .connect(uri, {
+        maxPoolSize: serverless ? 3 : 10,
+        // A container keeps one socket warm so the first request after an idle
+        // spell skips the TCP + TLS + auth handshake. A function instance that is
+        // about to be frozen should hold nothing.
+        minPoolSize: serverless ? 0 : 1,
+        // Fail fast rather than hang: a request that cannot find a primary in 8s
+        // becomes a 500 the caller can retry, not a socket held open for minutes.
+        serverSelectionTimeoutMS: 8_000,
+        // Reap a stalled socket well before any upstream idle timeout can strand
+        // it. Comfortably above the slowest query here (the report aggregation).
+        socketTimeoutMS: 45_000,
+      })
+      .catch(err => {
+        globalThis.__pvaMongoose = undefined;
+        throw err;
+      });
   }
   return globalThis.__pvaMongoose;
 }
