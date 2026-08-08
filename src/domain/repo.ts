@@ -9,33 +9,62 @@ import { M } from "./models";
 import { AppError } from "../lib/errors";
 
 /**
- * One category x month can hold many entries by design (real bookkeeping, and
- * it makes drill-down free). This is the ceiling on how many one read returns,
- * so a pathological cell cannot hand the UI an unbounded document set or blow
- * a response body up. 500 is far past a human's month of receipts.
+ * One category x month holds exactly one entry (the unique index in models.ts),
+ * so this ceiling now bounds the unfiltered read — every cell a user owns —
+ * rather than a single pathological cell. 500 is far past a bookkeeper's range.
  *
  * ponytail: it is a hard cut, not a page — row 501 is simply not returned and
  * the caller is not told. The report aggregates server-side and is unaffected;
- * only the drill-down list could ever reach it. The upgrade is a cursor
- * (`createdAt` + `_id` after-key) once anyone actually hits 500.
+ * only an unfiltered list could reach it. The upgrade is a cursor (`month` +
+ * `_id` after-key) once anyone actually hits 500.
  */
 export const ACTUALS_LIMIT = 500;
+
+/**
+ * The display form of a name: unicode composed so two spellings of the same
+ * letters are the same string, and runs of whitespace collapsed so a stray
+ * double space is not a different word.
+ */
+const displayName = (name: string) => name.normalize("NFC").trim().replace(/\s+/g, " ");
+
+/**
+ * THE comparison form, and the only thing the unique index sees. Case-folded on
+ * top of the cleanup above, so "Marketing", "marketing " and "Marketing  " are
+ * one category rather than three rows that render identically in every list.
+ * Exported because the CSV import resolves its rows against the same rule —
+ * two definitions of "same name" is how look-alike duplicates get in.
+ */
+export const normalizeName = (name: string) => displayName(name).toLowerCase();
 
 export class ScopedRepo {
   constructor(private userId: Types.ObjectId) {}
 
+  /**
+   * userId onto every filter — and undefined values off it. The driver
+   * serializes an explicit `undefined` as BSON null, so {categoryId: undefined}
+   * asks for a null categoryId and matches nothing, rather than meaning "don't
+   * filter on it". Every filter in this class already routes through here, so
+   * dropping them once is what stops the next method with an optional key from
+   * having to remember. trusted() values pass through untouched: the value is
+   * copied by reference, so the symbol mongoose marks it with survives.
+   */
   private scope<T extends object>(filter: T) {
-    return { ...filter, userId: this.userId };
+    const defined = Object.fromEntries(Object.entries(filter).filter(([, v]) => v !== undefined));
+    return { ...defined, userId: this.userId } as T & { userId: Types.ObjectId };
   }
 
   // -- categories -----------------------------------------------------------
   async createCategory(name: string) {
-    const normalizedName = name.trim().toLowerCase();
+    const display = displayName(name);
     try {
-      return await M.Category.create({ userId: this.userId, name: name.trim(), normalizedName });
+      return await M.Category.create({
+        userId: this.userId,
+        name: display,
+        normalizedName: normalizeName(name),
+      });
     } catch (e: unknown) {
       if ((e as { code?: number })?.code === 11000)
-        throw new AppError("VALIDATION_FAILED", `Category "${name}" already exists.`);
+        throw new AppError("VALIDATION_FAILED", `Category "${display}" already exists.`);
       throw e;
     }
   }
@@ -49,8 +78,9 @@ export class ScopedRepo {
     if (!c) throw new AppError("UNKNOWN_CATEGORY", "That category doesn't exist. Pick one from the list.");
     return c;
   }
-  findCategoryByName(normalizedName: string) {
-    return M.Category.findOne(this.scope({ normalizedName })).lean();
+  /** Takes the name as typed — normalising here is what stops a caller doing it differently. */
+  findCategoryByName(name: string) {
+    return M.Category.findOne(this.scope({ normalizedName: normalizeName(name) })).lean();
   }
   /**
    * The whole name -> category map in one read. The CSV import resolves every
@@ -90,7 +120,16 @@ export class ScopedRepo {
   }
 
   // -- actuals ---------------------------------------------------------------
-  createActual(
+  /**
+   * A cell holds one entry, so a write REPLACES it — logging spend twice for
+   * the same category and month leaves one figure, not two rows that the report
+   * silently adds together. The unique index is the rule; this is the only way
+   * every caller (manual log, seed, import) obeys it.
+   *
+   * $unset, not just $set: replacing an imported entry with a manual one has to
+   * drop the batch id it carried, and clearing the note has to clear it.
+   */
+  async upsertActual(
     doc: {
       categoryId: string;
       month: string;
@@ -101,14 +140,37 @@ export class ScopedRepo {
     },
     session?: ClientSession
   ) {
-    // Array form so the session actually reaches the write (Model.create with
-    // an options object only honours `session` in the array overload).
-    return M.Actual.create([{ ...doc, userId: this.userId }], { session }).then(d => d[0]);
+    const { categoryId, month, amountMinor, note, source = "manual", importBatchId } = doc;
+    const set: Record<string, unknown> = { amountMinor, source };
+    const unset: Record<string, 1> = {};
+    if (note === undefined) unset.note = 1;
+    else set.note = note;
+    if (importBatchId === undefined) unset.importBatchId = 1;
+    else set.importBatchId = importBatchId;
+
+    // An empty $unset is an error to Mongo, not a no-op, so it only goes in when
+    // there is something to clear.
+    const update = Object.keys(unset).length ? { $set: set, $unset: unset } : { $set: set };
+    const write = () =>
+      M.Actual.findOneAndUpdate(this.scope({ categoryId, month }), update, {
+        upsert: true,
+        returnDocument: "after",
+        setDefaultsOnInsert: true,
+        session,
+      }).lean();
+
+    // Two writes racing for the same empty cell: one inserts, the other's upsert
+    // finds nothing and then trips the unique index. Retrying finds the row the
+    // winner wrote and updates it, which is what "replace" meant either way.
+    return write().catch((e: unknown) =>
+      (e as { code?: number })?.code === 11000 ? write() : Promise.reject(e)
+    );
   }
   /**
-   * The import's write, and the only bulk one. insertMany sends the whole batch
-   * in one command instead of the await-per-row loop it replaces — same
-   * documents, same transaction, same validation, one round trip.
+   * The import's write, and the only bulk one. One bulkWrite sends the whole
+   * batch in a single command instead of an await-per-row loop — same cells,
+   * same transaction, one round trip. Upserts rather than inserts, so importing
+   * a file twice settles on the same figures instead of doubling the month.
    */
   createActuals(
     docs: {
@@ -120,13 +182,23 @@ export class ScopedRepo {
     }[],
     session?: ClientSession
   ) {
-    return M.Actual.insertMany(
-      docs.map(d => ({ ...d, userId: this.userId })),
+    return M.Actual.bulkWrite(
+      docs.map(d => ({
+        updateOne: {
+          filter: this.scope({ categoryId: d.categoryId, month: d.month }),
+          update: {
+            $set: { amountMinor: d.amountMinor, source: d.source, importBatchId: d.importBatchId },
+            $unset: { note: 1 }, // an imported row carries none; a replaced manual one must lose its own
+          },
+          upsert: true,
+        },
+      })),
       { session }
     );
   }
   /** Projection = the CONTRACT's actual shape plus importBatchId (the import
-   *  tests group by it); userId and updatedAt are internal. */
+   *  tests group by it); userId and updatedAt are internal. With one entry per
+   *  cell, {month, categoryId} returns at most one row. */
   listActuals(filter: { month?: string; categoryId?: string }, limit = ACTUALS_LIMIT) {
     return M.Actual.find(this.scope(filter), {
       categoryId: 1,

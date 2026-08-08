@@ -1,13 +1,14 @@
 /**
  * importCsv.ts — two-phase import: preview (nothing written) then commit
  * (all-or-nothing in a transaction). Converts "upload and pray" into a
- * reviewable diff. Locked-month rows are rejected at validation time.
+ * reviewable diff. Locked-month rows, and rows that repeat a category+month
+ * already claimed earlier in the same file, are rejected at validation time.
  */
 import { randomUUID } from "crypto";
 import mongoose from "mongoose";
 import { zCsvRow } from "./schemas";
 import { toMinor } from "../lib/money";
-import type { ScopedRepo } from "./repo";
+import { normalizeName, type ScopedRepo } from "./repo";
 
 export interface RowResult {
   line: number; // 1-based, excluding header
@@ -29,6 +30,13 @@ export async function previewCsv(repo: ScopedRepo, csvText: string): Promise<Row
   // round trips re-asking two questions it had already answered.
   const [categoriesByName, lockedMonths] = await Promise.all([repo.categoriesByName(), repo.lockedMonths()]);
 
+  // A cell holds one entry, so a file that names the same category and month
+  // twice is describing one figure twice. Caught here rather than at the write:
+  // the commit upserts, so the later line would quietly win and the user would
+  // be told "2 rows imported" for one cell. First line for each cell wins the
+  // spot; the rest come back flagged, pointing at the line they repeat.
+  const firstLineFor = new Map<string, number>();
+
   const results: RowResult[] = [];
   for (let i = 0; i < body.length; i++) {
     const line = i + 1;
@@ -40,7 +48,7 @@ export async function previewCsv(repo: ScopedRepo, csvText: string): Promise<Row
       results.push({ line, ok: false, error: parsed.error.issues[0].message });
       continue;
     }
-    const cat = categoriesByName.get(parsed.data.category.toLowerCase());
+    const cat = categoriesByName.get(normalizeName(parsed.data.category));
     if (!cat) {
       results.push({
         line,
@@ -57,6 +65,17 @@ export async function previewCsv(repo: ScopedRepo, csvText: string): Promise<Row
       });
       continue;
     }
+    const cell = `${parsed.data.month}|${cat._id}`;
+    const repeats = firstLineFor.get(cell);
+    if (repeats !== undefined) {
+      results.push({
+        line,
+        ok: false,
+        error: `Line ${repeats} already covers ${cat.name} in ${parsed.data.month}. One row per category and month — merge them into a single line.`,
+      });
+      continue;
+    }
+    firstLineFor.set(cell, line);
     results.push({
       line,
       ok: true,
@@ -85,8 +104,10 @@ export async function commitCsv(repo: ScopedRepo, csvText: string) {
   const session = await mongoose.startSession();
   try {
     await session.withTransaction(async () => {
-      // One insertMany, not an await per row: the transaction now holds its
-      // locks for a single round trip instead of one per line of the file.
+      // One bulkWrite, not an await per row: the transaction holds its locks
+      // for a single round trip instead of one per line of the file. Each row
+      // upserts onto its cell, so re-importing a file settles on the same
+      // figures rather than doubling the month.
       await repo.createActuals(
         results.map(r => ({ ...r.parsed!, source: "import" as const, importBatchId })),
         session

@@ -39,7 +39,7 @@ async function resetUser(email: string, password: string): Promise<ScopedRepo> {
 
 /** Categories survive re-runs (unique per user), so create-or-find. */
 async function categoryId(repo: ScopedRepo, name: string): Promise<string> {
-  const cat = await repo.createCategory(name).catch(() => repo.findCategoryByName(name.trim().toLowerCase()));
+  const cat = await repo.createCategory(name).catch(() => repo.findCategoryByName(name));
   return String(cat!._id);
 }
 
@@ -57,17 +57,17 @@ async function main() {
   await demo.upsertPlan(mkt, "2026-02", toMinor(5000));
   await demo.upsertPlan(pay, "2026-02", toMinor(20000));
 
-  await demo.createActual({
+  await demo.upsertActual({
     categoryId: mkt,
     month: "2026-01",
     amountMinor: toMinor(4800),
     note: "Ads + events",
   });
-  await demo.createActual({ categoryId: pay, month: "2026-01", amountMinor: toMinor(20500) });
-  await demo.createActual({ categoryId: pay, month: "2026-02", amountMinor: toMinor(19800) });
+  await demo.upsertActual({ categoryId: pay, month: "2026-01", amountMinor: toMinor(20500) });
+  await demo.upsertActual({ categoryId: pay, month: "2026-02", amountMinor: toMinor(19800) });
   // Marketing Feb has no actual on purpose (missing actual = 0, -5,000 / -100%).
   // Unbudgeted spend demo (hasPlan:false in the report):
-  await demo.createActual({
+  await demo.upsertActual({
     categoryId: tools,
     month: "2026-01",
     amountMinor: toMinor(340),
@@ -82,13 +82,13 @@ async function main() {
 
   await other.upsertPlan(contractors, "2026-01", toMinor(8000));
   await other.upsertPlan(contractors, "2026-02", toMinor(8000));
-  await other.createActual({
+  await other.upsertActual({
     categoryId: contractors,
     month: "2026-01",
     amountMinor: toMinor(8400),
     note: "Two retainers",
   });
-  await other.createActual({ categoryId: contractors, month: "2026-02", amountMinor: toMinor(7900) });
+  await other.upsertActual({ categoryId: contractors, month: "2026-02", amountMinor: toMinor(7900) });
   // No lock here: January is closed for demo@ and open for other@ — same month,
   // different tenant, different answer.
 

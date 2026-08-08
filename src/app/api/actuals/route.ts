@@ -1,5 +1,6 @@
 /**
- * Actuals — list (optionally filtered) and create. Money arrives in MAJOR
+ * Actuals — list (optionally filtered) and record. One entry per category x
+ * month, so POST is a replace rather than an append. Money arrives in MAJOR
  * units and is converted with toMinor() here, at the boundary, nowhere else.
  */
 import { NextResponse } from "next/server";
@@ -29,7 +30,9 @@ export const POST = withRoute(async (req, repo) => {
   const body = zActualCreate.parse(await req.json());
   await repo.requireCategory(body.categoryId);
   await assertPeriodUnlocked(repo, body.month);
-  const actual = await repo.createActual({
+  // Upsert, not insert: a cell holds one entry, so posting the same category
+  // and month again replaces that figure instead of adding a second row.
+  const actual = await repo.upsertActual({
     categoryId: body.categoryId,
     month: body.month,
     amountMinor: toMinor(body.amount),

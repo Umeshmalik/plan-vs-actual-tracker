@@ -125,6 +125,35 @@ describe("the hot reads are index seeks, not collection scans", () => {
     expect(totalKeysExamined).toBeLessThanOrEqual(nReturned * 2);
   });
 
+  /**
+   * The constraint the app leans on, asserted at the layer that enforces it:
+   * upsertActual and the import's bulkWrite both aim at one entry per cell, but
+   * this is the thing that holds when a race, a script or a mongosh session
+   * goes around them.
+   */
+  it("the database refuses a second entry for one category x month", async () => {
+    await expect(
+      M.Actual.create({
+        userId,
+        categoryId: catIds[0],
+        month: MONTHS[0],
+        amountMinor: 1,
+        source: "manual",
+      })
+    ).rejects.toMatchObject({ code: 11000 });
+
+    // Same cell, different tenant, is not a duplicate — the index is scoped.
+    await expect(
+      M.Actual.create({
+        userId: new Types.ObjectId(),
+        categoryId: catIds[0],
+        month: MONTHS[0],
+        amountMinor: 1,
+        source: "manual",
+      })
+    ).resolves.toBeTruthy();
+  });
+
   it("listActuals caps an unfiltered read at its documented ceiling", async () => {
     const all = await repo.listActuals({});
     expect(all).toHaveLength(MONTHS.length * catIds.length); // 120, under the 500 ceiling: nothing hidden yet

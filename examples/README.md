@@ -6,11 +6,11 @@ assume the seeded state: categories `Marketing`, `Payroll`, `Tools`, and
 
 Every message below was captured from the running app, not written by hand.
 
-| File                        | What it proves                                                                                                                                                                                                   |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `actuals-valid.csv`         | The happy path — 5 rows ready, 0 errors, commit enabled. February adds to existing entries (many actuals per category×month is by design); March is empty in the seed, so the report visibly changes afterwards. |
-| `actuals-mixed-errors.csv`  | Every validation path at once, and that a partly-bad file writes **nothing** — 2 ready, 5 errored, commit disabled.                                                                                              |
-| `actuals-locked-period.csv` | Server-side locking. All 3 rows target closed January, so nothing is written no matter what the UI would let you click.                                                                                          |
+| File                        | What it proves                                                                                                                                                                                                                                                                                           |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `actuals-valid.csv`         | The happy path — 5 rows ready, 0 errors, commit enabled. February replaces the seeded figures for those cells (one actual per category×month), March is empty in the seed, so the report visibly changes afterwards. Import it twice: the second run lands on the same numbers instead of doubling them. |
+| `actuals-mixed-errors.csv`  | Every validation path at once, and that a partly-bad file writes **nothing** — 2 ready, 5 errored, commit disabled.                                                                                                                                                                                      |
+| `actuals-locked-period.csv` | Server-side locking. All 3 rows target closed January, so nothing is written no matter what the UI would let you click.                                                                                                                                                                                  |
 
 ## What each row of `actuals-mixed-errors.csv` returns
 
@@ -41,6 +41,14 @@ returns **422** and writes nothing:
 }
 ```
 
+**A file that names one cell twice** — add `2026-03,Marketing,999` under the
+existing `2026-03,Marketing,5200` in `actuals-valid.csv`. The second line comes
+back flagged, pointing at the one it repeats, and the commit is disabled:
+
+```text
+Line 3 already covers Marketing in 2026-03. One row per category and month — merge them into a single line.
+```
+
 ## Two more cases worth trying by hand
 
 **Bad header** — change the first line to `month,category,total`. The whole file
@@ -48,13 +56,27 @@ is rejected with one message and no row is even inspected:
 `Header must be exactly "month,category,amount".`
 
 **A large file, to see the virtualized preview table** — the preview renders a
-scrolling window rather than 20,000 DOM rows:
+scrolling window rather than 20,000 DOM rows. The rows walk months rather than
+repeating one cell, because one row per category and month makes 20,000 copies
+of `2026-03,Marketing` a duplicate file, not a big one:
 
 ```bash
 { echo "month,category,amount";
-  for i in $(seq 1 20000); do echo "2026-03,Marketing,$((RANDOM % 900 + 100))"; done
+  for i in $(seq 0 19999); do
+    printf '%04d-%02d,Marketing,%d\n' $((2026 + i / 12)) $((i % 12 + 1)) $((RANDOM % 900 + 100));
+  done
 } > /tmp/big.csv
 ```
 
+The server side is flat in file size too: the categories a user owns and the
+months they have closed are each read **once per file**, not once per row, and
+the commit is a single `bulkWrite` of upserts inside the transaction.
+`tests/importCsv.test.ts` counts driver commands to hold that — 200 rows must
+preview in the same 2 reads as 2 rows.
+
 Anything over 1 MB is rejected by the upload guard, with the limit stated in the
 message.
+
+Committing also expires that user's cached reads (`user:<id>`), so the Report
+tab shows the imported rows on the next render with no refresh dance — see the
+caching section of the root `README.md`.

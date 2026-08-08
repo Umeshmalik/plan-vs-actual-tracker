@@ -95,7 +95,9 @@ export function ImportFlow() {
       // The banner says where they landed; the toast stays short. An import
       // writes spend, so nothing shows up on Plans — that is the one thing
       // worth stating outright.
-      setOk(`${message} as actuals. They show on Report and Actuals; Plans holds targets only.`);
+      setOk(
+        `${message} as actuals, replacing any figure those cells already held. They show on Report and Actuals; Plans holds targets only.`
+      );
       toast.success(message, {
         action: { label: "See the report", onClick: () => router.push("/report") },
       });
@@ -367,8 +369,10 @@ export function ImportFlow() {
                   <AlertDialogHeader>
                     <AlertDialogTitle>Import {plural(results.length, "row")}?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This writes {plural(results.length, "row")} as actuals in one transaction. Commits are
-                      all-or-nothing: if the server rejects any row, nothing is written.
+                      This writes {plural(results.length, "row")} as actuals in one transaction. Each row
+                      replaces whatever that category and month already holds, so importing the same file
+                      twice lands on the same figures rather than doubling them. Commits are all-or-nothing:
+                      if the server rejects any row, nothing is written.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>

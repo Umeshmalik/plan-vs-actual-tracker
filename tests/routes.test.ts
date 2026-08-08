@@ -78,6 +78,27 @@ describe("REST layer", () => {
     expect([s, b.error.code]).toEqual([422, "VALIDATION_FAILED"]);
   });
 
+  /**
+   * "Same name" is decided by repo.normalizeName, not by string equality, so a
+   * list cannot end up holding two rows that render identically. Each variant
+   * below reached the database as its own category before that existed.
+   */
+  it("categories: a name that only differs by case, spacing or unicode form is a duplicate", async () => {
+    const before = (await state.repo.listCategories()).length;
+    for (const name of ["marketing", " Marketing ", "MARKETING", "Marketing".normalize("NFD")]) {
+      const [s, b] = await json(await categories.POST(req("/api/categories", "POST", { name })));
+      expect([s, b.error.code]).toEqual([422, "VALIDATION_FAILED"]);
+      expect(b.error.message).toContain("already exists");
+    }
+    // A genuinely new name with a stray double space is stored collapsed, so the
+    // next attempt at the single-spaced spelling is a duplicate too.
+    const [s2, b2] = await json(await categories.POST(req("/api/categories", "POST", { name: "Ad  spend" })));
+    expect([s2, b2.category.name]).toEqual([200, "Ad spend"]);
+    expect((await categories.POST(req("/api/categories", "POST", { name: "ad spend" }))).status).toBe(422);
+
+    expect((await state.repo.listCategories()).length).toBe(before + 1);
+  });
+
   it("plans: PUT converts major -> minor, DELETE reports the count", async () => {
     const [s, b] = await json(
       await plans.PUT(req("/api/plans", "PUT", { categoryId: catId, month: "2026-02", amount: 5000 }))
@@ -125,6 +146,26 @@ describe("REST layer", () => {
     expect([s2, b2.deleted]).toEqual([200, 1]);
   });
 
+  /**
+   * The duplicate the user reported: the same category and month posted twice.
+   * It has to answer with one entry, not two rows the report silently adds up.
+   */
+  it("actuals: posting the same category+month again replaces it, never appends", async () => {
+    const post = (amount: number, note?: string) =>
+      actuals.POST(req("/api/actuals", "POST", { categoryId: catId, month: "2026-05", amount, note }));
+
+    const [, first] = await json(await post(10, "first"));
+    const [s, second] = await json(await post(25));
+
+    expect(s).toBe(200);
+    expect(second.actual._id).toBe(first.actual._id); // same row, not a new one
+    expect(second.actual.amountMinor).toBe(2500);
+    expect(second.actual.note).toBeUndefined(); // a replace clears what it does not carry
+
+    const cell = await state.repo.listActuals({ month: "2026-05", categoryId: catId });
+    expect(cell).toHaveLength(1);
+  });
+
   it("actuals: junk id -> 404, not 500 (no CastError escapes the repo)", async () => {
     const [s, b] = await json(
       await actualById.DELETE(req("/api/actuals/junk", "DELETE"), { params: Promise.resolve({ id: "junk" }) })
@@ -162,7 +203,7 @@ describe("REST layer", () => {
   });
 
   it("deleting an actual inside a month locked afterwards is 409", async () => {
-    const made = await state.repo.createActual({ categoryId: catId, month: "2026-03", amountMinor: 100 });
+    const made = await state.repo.upsertActual({ categoryId: catId, month: "2026-03", amountMinor: 100 });
     await state.repo.lock("2026-03");
     const id = String(made._id);
     const [s, b] = await json(
@@ -194,7 +235,7 @@ describe("REST layer", () => {
   });
 
   it("imports: preview counts, commit writes, bad row 422 with results", async () => {
-    const good = "month,category,amount\n2026-02,Marketing,10\n2026-02,Marketing,20";
+    const good = "month,category,amount\n2026-02,Marketing,10\n2026-04,Marketing,20";
     const bad = "month,category,amount\n2026-02,Nope,10\n2026-02,Marketing,20";
 
     const [s, b] = await json(await preview.POST(req("/api/imports/preview", "POST", { csv: bad })));
@@ -207,9 +248,22 @@ describe("REST layer", () => {
 
     const [s3, b3] = await json(await commit.POST(req("/api/imports/commit", "POST", { csv: good })));
     expect([s3, b3.committed, typeof b3.importBatchId]).toEqual([200, 2, "string"]);
-    expect((await state.repo.listActuals({ month: "2026-02" })).length).toBe(2);
+    expect((await state.repo.listActuals({ month: "2026-02" })).length).toBe(1);
 
     expect((await commit.POST(req("/api/imports/commit", "POST", { csv: "" }))).status).toBe(422);
+  });
+
+  it("imports: a file that names one cell twice is 422, and writes nothing", async () => {
+    const before = (await state.repo.listActuals({})).length;
+    const dupe = "month,category,amount\n2026-06,Marketing,10\n2026-06,Marketing,20";
+
+    const [s, b] = await json(await preview.POST(req("/api/imports/preview", "POST", { csv: dupe })));
+    expect([s, b.okCount, b.errorCount]).toEqual([200, 1, 1]);
+    expect(b.results[1].error).toContain("Line 1 already covers Marketing in 2026-06");
+
+    const [s2, b2] = await json(await commit.POST(req("/api/imports/commit", "POST", { csv: dupe })));
+    expect([s2, b2.error.code]).toEqual([422, "VALIDATION_FAILED"]);
+    expect((await state.repo.listActuals({})).length).toBe(before);
   });
 
   it("imports: commit into a month locked after preview is 409", async () => {

@@ -30,7 +30,8 @@ export default async function Page() {
         <CardHeader>
           <CardTitle className="font-display">What the file must contain</CardTitle>
           <CardDescription>
-            One header row, then one row per actual. Preview checks every row on the server first.
+            One header row, then one row per category and month — a file that names the same cell twice is
+            flagged, not imported twice. Preview checks every row on the server first.
           </CardDescription>
         </CardHeader>
 

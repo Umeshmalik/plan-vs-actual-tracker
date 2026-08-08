@@ -1,10 +1,14 @@
 "use client";
 
 /**
- * ActualForm — log one spend entry, on shadcn Select / Popover+Calendar / Input
- * inside a Card. Category and Month double as the drill-down selector (they
- * rewrite the query string), so they stay enabled even when the period is
- * closed: you must still be able to look at a locked month.
+ * ActualForm — the one spend entry for a category+month, on shadcn Select /
+ * Popover+Calendar / Input inside a Card. Category and Month double as the
+ * selector (they rewrite the query string), so they stay enabled even when the
+ * period is closed: you must still be able to look at a locked month.
+ *
+ * A cell holds one entry, so this form edits rather than appends: it opens on
+ * whatever is already there and the API upserts. The success toast still says
+ * "Spend logged" for a new cell and the button says "Replace" for a full one.
  *
  * Field state and client validation are TanStack Form's, using the server's own
  * `zActualCreate` rules through Standard Schema. The write is a
@@ -20,6 +24,7 @@ import { CalendarDays, Loader2 } from "lucide-react";
 import { zActualCreate } from "@/domain/schemas";
 import { fieldErrors, type ApiError } from "@/lib/api";
 import { formatMonthLabel } from "@/lib/month";
+import { toMajor } from "@/lib/money";
 import { useApiMutation } from "@/lib/useApiMutation";
 import { Banner } from "@/components/Banner";
 import { Field } from "@/components/Field";
@@ -55,6 +60,7 @@ export function ActualForm({
   categoryId,
   month,
   locked,
+  current,
   from,
   to,
 }: {
@@ -62,6 +68,8 @@ export function ActualForm({
   categoryId: string;
   month: string;
   locked: boolean;
+  /** What this cell already holds, if anything — the form edits it in place. */
+  current?: { amountMinor: number; note?: string };
   from: string;
   to: string;
 }) {
@@ -74,20 +82,30 @@ export function ActualForm({
   >({
     url: "/api/actuals",
     method: "POST",
-    success: "Spend logged",
+    success: current ? "Spend replaced" : "Spend logged",
   });
 
   const form = useForm({
-    defaultValues: { amount: "", note: "" },
+    // Seeded from the cell's existing entry, so saving edits the figure on
+    // screen rather than adding a second one behind it. The parent remounts
+    // this component when the cell changes, which is what re-reads these.
+    defaultValues: {
+      amount: current ? toMajor(current.amountMinor).toFixed(2) : "",
+      note: current?.note ?? "",
+    },
     // Nothing turns red until the first submit, then the fields correct
     // themselves as you type — the same moment the server used to speak up.
     validationLogic: revalidateLogic(),
     // Typed strings go straight to the server; Zod owns amount validity.
-    onSubmit: ({ value, formApi }) =>
-      logSpend.mutate(
-        { categoryId, month, amount: value.amount, note: value.note.trim() || undefined },
-        { onSuccess: () => formApi.reset() }
-      ),
+    // No reset on success: the saved figure IS this cell's value now, and the
+    // router refresh brings the same numbers back as the new defaults.
+    onSubmit: ({ value }) =>
+      logSpend.mutate({
+        categoryId,
+        month,
+        amount: value.amount,
+        note: value.note.trim() || undefined,
+      }),
   });
 
   // Field-level issues land under the input they name; anything that maps to no
@@ -107,10 +125,14 @@ export function ActualForm({
   return (
     <Card className="w-85 max-sm:w-full">
       <CardHeader>
-        <CardTitle className="font-display text-[1.15rem] font-semibold">Log spend</CardTitle>
+        <CardTitle className="font-display text-[1.15rem] font-semibold">
+          {current ? "Edit spend" : "Log spend"}
+        </CardTitle>
         <CardDescription>
-          One entry against one category and month. Category and month also choose the cell shown beside this
-          form.
+          {current
+            ? "This category and month already has a figure — saving replaces it rather than adding a second entry."
+            : "One entry per category and month."}{" "}
+          Category and month also choose the cell shown beside this form.
         </CardDescription>
       </CardHeader>
 
@@ -227,7 +249,7 @@ export function ActualForm({
 
           <Button type="submit" disabled={locked || logSpend.isPending}>
             {logSpend.isPending && <Loader2 className="animate-spin" aria-hidden />}
-            Log spend
+            {current ? "Replace spend" : "Log spend"}
           </Button>
         </form>
       </CardContent>

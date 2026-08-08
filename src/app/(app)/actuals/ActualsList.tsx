@@ -1,9 +1,12 @@
 "use client";
 
 /**
- * ActualsList — the drill-down for one category+month. DataTable renders the
- * rows inside a Card; each row's Remove is an icon Button behind a Tooltip and
- * an AlertDialog, because a deleted entry does not come back.
+ * ActualsList — what one category+month currently holds, which is one entry or
+ * none. DataTable renders it inside a Card; Remove is an icon Button behind a
+ * Tooltip and an AlertDialog, because a deleted entry does not come back.
+ *
+ * No total row: with one entry per cell the total IS the row, and repeating it
+ * underneath was the screen's own way of implying there could be several.
  *
  * The removal is a `useApiMutation` with a path-param url, so the row id is the
  * variable and no body is sent; pending, the toast and the refresh are the
@@ -29,7 +32,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
-import { TableCell, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface Row {
@@ -57,19 +59,11 @@ export function ActualsList({
     success: "Entry removed",
   });
 
-  // The one place the UI adds money up: the month total, summed from the
-  // server's own minor units and rendered by MoneyText. Nothing else here does arithmetic.
-  const total = rows.reduce((sum, r) => sum + r.amountMinor, 0);
-
   const columns: Column<Row>[] = [
-    // sortValue, not the rendered node: `render` returns React elements, and
-    // amounts must compare as integer minor units rather than as "1 200.00".
     {
       key: "date",
-      header: "Date",
+      header: "Recorded",
       width: "6.5rem",
-      sortable: true,
-      sortValue: r => r.date,
       render: r => <span className="font-mono text-xs">{r.date}</span>,
     },
     { key: "note", header: "Note", render: r => r.note || <span className="text-muted-foreground">—</span> },
@@ -77,8 +71,6 @@ export function ActualsList({
       key: "amount",
       header: "Amount",
       numeric: true,
-      sortable: true,
-      sortValue: r => r.amountMinor,
       render: r => <MoneyText minor={r.amountMinor} />,
     },
     {
@@ -109,8 +101,9 @@ export function ActualsList({
             <AlertDialogHeader>
               <AlertDialogTitle>Remove this entry?</AlertDialogTitle>
               <AlertDialogDescription>
-                Removing the {r.date} entry of <MoneyText minor={r.amountMinor} /> drops the month total for{" "}
-                {caption}. Log it again if you need it back.
+                Removing this entry of <MoneyText minor={r.amountMinor} /> leaves {caption} with no recorded
+                spend, so the report counts it as 0. Log it again if you need it back — or save a new figure
+                over it instead, which does not need this step.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -132,28 +125,14 @@ export function ActualsList({
       {rows.length === 0 ? (
         <EmptyState
           title="Nothing logged here yet"
-          body={`No spend recorded for ${caption}. Log the first entry with the form beside this list.`}
+          body={`No spend recorded for ${caption}. Log it with the form beside this list.`}
         />
       ) : (
         <Card>
           {/* DataTable's caption is the section title, so the Card adds the
               status line under the table instead of a second heading. */}
           <CardContent>
-            <DataTable
-              caption={caption}
-              columns={columns}
-              rows={rows}
-              rowKey={r => r.id}
-              footer={
-                <TableRow>
-                  <TableCell colSpan={2}>Month total</TableCell>
-                  <TableCell className="text-right font-mono">
-                    <MoneyText minor={total} />
-                  </TableCell>
-                  <TableCell />
-                </TableRow>
-              }
-            />
+            <DataTable caption={caption} columns={columns} rows={rows} rowKey={r => r.id} />
           </CardContent>
 
           {locked && (

@@ -74,6 +74,11 @@ const Category = new Schema<CategoryDoc>(
 // No {userId,name} index for listCategories' sort by name: a user holds tens of
 // categories, so the sort is an in-memory pass over a handful of already-indexed
 // keys. An index there would earn nothing and cost a write on every create.
+//
+// The constraint is only as good as what goes into normalizedName: see
+// repo.normalizeName, which folds case, unicode form and runs of whitespace so
+// "Marketing  Ops" cannot sit next to "Marketing Ops" as two categories that
+// render identically.
 Category.index({ userId: 1, normalizedName: 1 }, { unique: true });
 
 const Plan = new Schema<PlanDoc>(
@@ -112,6 +117,13 @@ const Actual = new Schema<ActualDoc>(
   },
   { timestamps: true }
 );
+// One entry per category x month — the same rule Plan carries, for the same
+// reason: a second entry for a cell is the same spend recorded twice, not a
+// second line item. Without it nothing stops a double-submitted form, a CSV
+// that repeats a row, or the same file being imported again from doubling a
+// month's spend, and the report sums whatever it finds. Writes upsert onto the
+// cell (repo.upsertActual), so obeying it is the only thing a caller can do.
+Actual.index({ userId: 1, categoryId: 1, month: 1 }, { unique: true });
 // Matches the report's query shape exactly: filter userId+month range, group by category.
 // Serves the drill-down too — repo.listActuals({month, categoryId}) is three
 // equalities against this same prefix order, and the {categoryId}-only variant
@@ -122,11 +134,11 @@ const Actual = new Schema<ActualDoc>(
 // createdAt is the trailing key, and it is there for the sort, not the filter.
 // listActuals orders by {month, createdAt} and caps at ACTUALS_LIMIT; with the
 // three equalities pinned, month is constant and createdAt is the only thing
-// left to order by, so the index supplies it. Without this key the exact-cell
-// read ends in a blocking SORT — the one query allowed to return 500 rows would
-// buffer and sort all 500 in memory before the limit could bite. With it, the
-// plan is a plain LIMIT over the scan. The report's range $match is untouched:
-// it uses the {userId, month, categoryId} prefix exactly as before.
+// left to order by, so the index supplies it rather than the plan ending in a
+// blocking SORT. A single cell now holds one entry, so that sort is short — but
+// the category-only drill-down still walks a row per month in order, and the
+// unfiltered read still reaches ACTUALS_LIMIT. The report's range $match is
+// untouched: it uses the {userId, month, categoryId} prefix exactly as before.
 Actual.index({ userId: 1, month: 1, categoryId: 1, createdAt: 1 });
 
 const PeriodLock = new Schema<PeriodLockDoc>({

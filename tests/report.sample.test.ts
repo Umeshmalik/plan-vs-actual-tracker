@@ -30,10 +30,10 @@ beforeAll(async () => {
   await repo.upsertPlan(String(mkt._id), "2026-02", toMinor(5000));
   await repo.upsertPlan(String(pay._id), "2026-02", toMinor(20000));
 
-  await repo.createActual({ categoryId: String(mkt._id), month: "2026-01", amountMinor: toMinor(4800) });
-  await repo.createActual({ categoryId: String(pay._id), month: "2026-01", amountMinor: toMinor(20500) });
+  await repo.upsertActual({ categoryId: String(mkt._id), month: "2026-01", amountMinor: toMinor(4800) });
+  await repo.upsertActual({ categoryId: String(pay._id), month: "2026-01", amountMinor: toMinor(20500) });
   // Marketing Feb intentionally omitted (matches the PDF)
-  await repo.createActual({ categoryId: String(pay._id), month: "2026-02", amountMinor: toMinor(19800) });
+  await repo.upsertActual({ categoryId: String(pay._id), month: "2026-02", amountMinor: toMinor(19800) });
 });
 
 afterAll(async () => {
