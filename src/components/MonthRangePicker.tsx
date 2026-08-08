@@ -27,10 +27,20 @@ import {
 import { CalendarDays } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
+import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import {
+  CALENDAR_YEAR_START,
+  MONTH_NAMES,
+  fiscalYearLabel,
+  fiscalYearRange,
+  recentFiscalYears,
+} from "@/lib/fiscalYear";
 import { formatMonthLabel, isMonth } from "@/lib/month";
 import { DEFAULT_RANGE } from "@/lib/range";
+import { useApiMutation } from "@/lib/useApiMutation";
 
 const toDate = (month: string) => parse(month, "yyyy-MM", new Date());
 const toMonth = (date: Date) => format(date, "yyyy-MM");
@@ -44,7 +54,7 @@ function presets(anchor: Date) {
   ];
 }
 
-export function MonthRangePicker() {
+export function MonthRangePicker({ fiscalYearStartMonth }: { fiscalYearStartMonth: number }) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -59,6 +69,18 @@ export function MonthRangePicker() {
 
   const selected = draft ?? { from: startOfMonth(toDate(from)), to: endOfMonth(toDate(to)) };
 
+  /**
+   * Where the fiscal year starts is a saved preference, not a URL parameter:
+   * it describes the business, not this particular look at the report. Saving
+   * it re-renders the server tree, so the header's label and the FY buttons
+   * below both follow in one hop.
+   */
+  const saveFiscalStart = useApiMutation<{ fiscalYearStartMonth: number }, { fiscalYearStartMonth: number }>({
+    url: "/api/settings",
+    method: "PUT",
+    success: vars => `Fiscal year now starts in ${MONTH_NAMES[vars.fiscalYearStartMonth - 1]}`,
+  });
+
   function commit(next: DateRange | undefined) {
     if (!next?.from || !next?.to) return;
     const a = toMonth(startOfMonth(next.from));
@@ -67,6 +89,18 @@ export function MonthRangePicker() {
     setDraft(undefined);
     router.push(`${pathname}?from=${a <= b ? a : b}&to=${a <= b ? b : a}`);
   }
+
+  /** A fiscal year is just a range, so it goes through the same commit path. */
+  function commitFiscalYear(fyYear: number) {
+    const { from: a, to: b } = fiscalYearRange(fyYear, fiscalYearStartMonth);
+    setOpen(false);
+    setDraft(undefined);
+    router.push(`${pathname}?from=${a}&to=${b}`);
+  }
+
+  // Anchored on the range in view, not on today's date: scrolling back to 2024
+  // should offer 2024's fiscal years, not this year's.
+  const fiscalYears = recentFiscalYears(to, fiscalYearStartMonth);
 
   return (
     <Popover
@@ -85,7 +119,7 @@ export function MonthRangePicker() {
         >
           <CalendarDays className="size-4 text-muted-foreground" aria-hidden />
           <span className="max-sm:hidden">
-            {formatMonthLabel(from)} – {formatMonthLabel(to)}
+            {formatMonthLabel(from)} - {formatMonthLabel(to)}
           </span>
           <span className="sm:hidden">Range</span>
         </Button>
@@ -105,6 +139,43 @@ export function MonthRangePicker() {
                 {p.label}
               </Button>
             ))}
+
+            <Separator className="my-1 max-sm:hidden" />
+
+            {fiscalYears.map(fy => (
+              <Button
+                key={fy}
+                variant="ghost"
+                size="sm"
+                className="justify-start font-normal"
+                onClick={() => commitFiscalYear(fy)}
+              >
+                {fiscalYearLabel(fy, fiscalYearStartMonth)}
+              </Button>
+            ))}
+
+            <div className="mt-1 grid gap-1 border-t pt-2 max-sm:w-full">
+              <Label htmlFor="fy-start" className="text-[0.7rem] text-muted-foreground">
+                Fiscal year starts
+              </Label>
+              <Select
+                value={String(fiscalYearStartMonth)}
+                disabled={saveFiscalStart.isPending}
+                onValueChange={v => saveFiscalStart.mutate({ fiscalYearStartMonth: Number(v) })}
+              >
+                <SelectTrigger id="fy-start" size="sm" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MONTH_NAMES.map((name, i) => (
+                    <SelectItem key={name} value={String(i + 1)}>
+                      {name}
+                      {i + 1 === CALENDAR_YEAR_START && " (calendar year)"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <Separator orientation="vertical" className="max-sm:hidden" />

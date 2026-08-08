@@ -8,11 +8,14 @@
  * request validation in schemas.ts.
  */
 import mongoose, { Schema, model, models, type Model, type Types } from "mongoose";
+import { CALENDAR_YEAR_START } from "../lib/fiscalYear";
 
 export interface UserDoc {
   _id: Types.ObjectId;
   email: string;
   passwordHash: string;
+  /** 1-12; 1 = January = the calendar year. See lib/fiscalYear.ts. */
+  fiscalYearStartMonth: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -56,6 +59,11 @@ const User = new Schema<UserDoc>(
   {
     email: { type: String, required: true },
     passwordHash: { type: String, required: true },
+    // A reporting preference, so it belongs to the person rather than the
+    // browser: picking an April start on a laptop has to hold on a phone. The
+    // default is what makes it invisible to anyone who never opens the setting
+    // — 1 is January, and a fiscal year starting in January IS a calendar year.
+    fiscalYearStartMonth: { type: Number, default: CALENDAR_YEAR_START, min: 1, max: 12 },
   },
   { timestamps: true }
 );

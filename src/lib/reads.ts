@@ -35,6 +35,7 @@ import { Types } from "mongoose";
 import { cacheLife, cacheTag } from "next/cache";
 import { ScopedRepo } from "@/domain/repo";
 import { runReport } from "@/domain/report";
+import { getSettings as userSettings } from "@/domain/users";
 import { connectDb } from "./db";
 
 /** One tag per tenant: every read a user makes, expired by any write they make. */
@@ -89,6 +90,17 @@ export async function getLockedMonths(userId: string, from: string, to: string) 
   tenantCache(userId);
   const repo = await scoped(userId);
   return (await repo.listLocks(from, to)).map(l => l.month).sort();
+}
+
+/**
+ * The user's own settings. Cached on the same tenant tag as everything else, so
+ * the header reads it on every render for free and `PUT /api/settings` expires
+ * it through the one gate in lib/route.ts like any other write.
+ */
+export async function getSettings(userId: string) {
+  "use cache";
+  tenantCache(userId);
+  return userSettings(userId);
 }
 
 /** Scalars, not a filter object, so the same query is always the same cache key. */
