@@ -1,0 +1,12 @@
+{
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": { "source.fixAll.eslint": "explicit" },
+  // Tailwind v4 has no tailwind.config.js — IntelliSense reads the @theme block
+  // in globals.css instead, and only if it is pointed at it.
+  "tailwindCSS.experimental.configFile": "src/app/globals.css",
+  // cn() and cva() wrap class strings, so complete and sort inside them too.
+  "tailwindCSS.classFunctions": ["cn", "cva"],
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "search.exclude": { "**/.next": true, "**/node_modules": true }
+}
