@@ -8,23 +8,16 @@
  * `npm run seed` twice does not double the actuals.
  */
 import mongoose, { Types } from "mongoose";
-import bcrypt from "bcryptjs";
 import { M } from "../src/domain/models";
 import { ScopedRepo } from "../src/domain/repo";
+// The same hash the sign-up form produces — one cost factor, in domain/users.ts.
+import { hashPassword } from "../src/domain/users";
+import { connectDb } from "../src/lib/db";
 import { toMinor } from "../src/lib/money";
-
-/**
- * Cost factor 12, not bcrypt's old default of 10. A cost is a budget against
- * the attacker's hardware, and 10 was chosen for 2010's: a 2026 GPU rig walks
- * a cost-10 hash roughly four times faster than a cost-12 one, and the price
- * of the upgrade here is ~230ms on a sign-in nobody perceives. Any other place
- * that ever produces a hash must use this same constant.
- */
-const BCRYPT_COST = 12;
 
 /** Upsert the user, then wipe their transactional data so re-runs are clean. */
 async function resetUser(email: string, password: string): Promise<ScopedRepo> {
-  const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
+  const passwordHash = await hashPassword(password);
   const user = await M.User.findOneAndUpdate(
     { email },
     { $setOnInsert: { passwordHash } },
@@ -44,7 +37,10 @@ async function categoryId(repo: ScopedRepo, name: string): Promise<string> {
 }
 
 async function main() {
-  await mongoose.connect(process.env.MONGODB_URI!);
+  // connectDb, not a second mongoose.connect: same pool settings as the app, and
+  // a named error ("MONGODB_URI is not set") instead of the driver's when the
+  // env file is missing — which is exactly how this script used to fail.
+  await connectDb();
 
   // -- demo@example.com — the assignment's sample table ----------------------
   const demo = await resetUser("demo@example.com", "review-me-2026");

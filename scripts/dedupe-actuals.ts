@@ -19,6 +19,7 @@
 import mongoose, { Types } from "mongoose";
 import { M } from "../src/domain/models";
 import { normalizeName } from "../src/domain/repo";
+import { connectDb } from "../src/lib/db";
 
 interface Cell {
   _id: { userId: Types.ObjectId; categoryId: Types.ObjectId; month: string };
@@ -27,7 +28,7 @@ interface Cell {
 }
 
 async function main() {
-  await mongoose.connect(process.env.MONGODB_URI!);
+  await connectDb(); // same pool and the same named error as the app and the seed
 
   // $sort before $group so $push preserves insertion order and "the oldest" is
   // ids[0] rather than whatever the storage engine handed back.

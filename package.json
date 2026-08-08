@@ -11,8 +11,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "seed": "tsx scripts/seed.ts",
-    "dedupe:actuals": "tsx scripts/dedupe-actuals.ts",
+    "seed": "node --env-file-if-exists=.env.local --import tsx scripts/seed.ts",
+    "dedupe:actuals": "node --env-file-if-exists=.env.local --import tsx scripts/dedupe-actuals.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm test"
