@@ -41,46 +41,47 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-20 flex items-center gap-4 border-b bg-background/95 px-6 py-3 backdrop-blur supports-backdrop-filter:bg-background/80 max-sm:px-3">
-        <Link href="/report" className="leading-tight">
-          <span className="font-display text-base font-semibold tracking-tight">Plan vs Actual</span>
-          <span className="block font-mono text-[0.65rem] tracking-[0.08em] text-muted-foreground uppercase">
-            ledger · {currentFy}
-          </span>
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link href="/report" className="leading-tight">
+            <span className="font-display text-base font-semibold tracking-tight">Plan vs Actual</span>
+            <span className="block font-mono text-[0.65rem] tracking-[0.08em] text-muted-foreground uppercase">
+              ledger · {currentFy}
+            </span>
+          </Link>
 
-        <Suspense fallback={<Skeleton className="ml-auto h-8 w-44" />}>
-          <MonthRangePicker fiscalYearStartMonth={fiscalYearStartMonth} />
-        </Suspense>
+          <Suspense fallback={<Skeleton className="ml-auto h-8 w-44" />}>
+            <MonthRangePicker fiscalYearStartMonth={fiscalYearStartMonth} />
+          </Suspense>
 
-        <RefreshButton />
+          <RefreshButton />
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="font-mono text-xs">
-              <span className="max-sm:hidden">{user.email}</span>
-              <span className="sm:hidden">Account</span>
-              <ChevronDown className="size-3.5" aria-hidden />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel className="font-normal">
-              <span className="block text-xs text-muted-foreground">Signed in as</span>
-              <span className="font-mono text-xs">{user.email}</span>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <form action={endSession}>
-              <DropdownMenuItem asChild>
-                <button type="submit" className="w-full">
-                  <LogOut className="size-4" aria-hidden />
-                  Sign out
-                </button>
-              </DropdownMenuItem>
-            </form>
-          </DropdownMenuContent>
-        </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="font-mono text-xs">
+                <span className="max-sm:hidden">{user.email}</span>
+                <span className="sm:hidden">Account</span>
+                <ChevronDown className="size-3.5" aria-hidden />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel className="font-normal">
+                <span className="block text-xs text-muted-foreground">Signed in as</span>
+                <span className="font-mono text-xs">{user.email}</span>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <form action={endSession}>
+                <DropdownMenuItem asChild>
+                  <button type="submit" className="w-full">
+                    <LogOut className="size-4" aria-hidden />
+                    Sign out
+                  </button>
+                </DropdownMenuItem>
+              </form>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+        <SectionTabs />
       </header>
-
-      <SectionTabs />
 
       <main className="mx-auto max-w-275 p-6 max-sm:p-4">{children}</main>
 
