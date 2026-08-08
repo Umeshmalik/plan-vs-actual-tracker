@@ -40,8 +40,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-20 flex items-center gap-4 border-b bg-background/95 px-6 py-3 backdrop-blur supports-backdrop-filter:bg-background/80 max-sm:px-3">
-        <div className="flex items-center gap-4">
+      {/* One sticky block, not two. The tabs have to pin under the header, and
+          giving them their own `sticky top-[64px]` would hard-code the header's
+          height into a second file — a number that goes wrong the first time the
+          wordmark wraps on a narrow screen. Sticking the pair together means the
+          browser does that arithmetic. The background and blur live here for the
+          same reason: one surface scrolling under one edge. */}
+      <div className="sticky top-0 z-20 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80">
+        <header className="flex items-center gap-4 border-b px-6 py-3 max-sm:px-3">
           <Link href="/report" className="leading-tight">
             <span className="font-display text-base font-semibold tracking-tight">Plan vs Actual</span>
             <span className="block font-mono text-[0.65rem] tracking-[0.08em] text-muted-foreground uppercase">
@@ -79,9 +85,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               </form>
             </DropdownMenuContent>
           </DropdownMenu>
-        </div>
+        </header>
+
         <SectionTabs />
-      </header>
+      </div>
 
       <main className="mx-auto max-w-275 p-6 max-sm:p-4">{children}</main>
 
