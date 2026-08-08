@@ -17,7 +17,16 @@ export const zMonth = z.string().refine(isMonth, {
  */
 export const zAmountMajor = z.coerce
   .number({ error: "Amount must be a number" })
-  .nonnegative("Amount must be ≥ 0");
+  .nonnegative("Amount must be 0 or more");
+
+/**
+ * Spend, as opposed to a target: a plan of 0 is a real statement ("budget
+ * nothing"), an actual of 0 is a row nobody needed to type. The wording is here
+ * rather than repeated at each call site, because it is what the CSV import
+ * prints against the offending line — `nonnegative` above fires first on a
+ * negative, so both messages have to read correctly on their own.
+ */
+export const zAmountPositive = zAmountMajor.refine(v => v > 0, "Amount must be greater than 0");
 
 export const zCategoryCreate = z.object({
   name: z.string().trim().min(1, "Name is required").max(60),
@@ -32,7 +41,7 @@ export const zPlanUpsert = z.object({
 export const zActualCreate = z.object({
   categoryId: z.string().min(1),
   month: zMonth,
-  amount: zAmountMajor.refine(v => v > 0, "Amount must be greater than 0"),
+  amount: zAmountPositive,
   note: z.string().trim().max(280).optional(),
 });
 
@@ -46,7 +55,7 @@ export const zReportQuery = z
 export const zCsvRow = z.object({
   month: zMonth,
   category: z.string().trim().min(1, "Category is required"),
-  amount: zAmountMajor.refine(v => v > 0, "Amount must be greater than 0"),
+  amount: zAmountPositive,
 });
 
 export type PlanUpsert = z.infer<typeof zPlanUpsert>;
