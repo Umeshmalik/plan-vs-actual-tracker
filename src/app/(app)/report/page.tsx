@@ -15,7 +15,8 @@ import { resolveRange, type SearchParams } from "@/lib/range";
 import { formatMonthLabel, monthRange } from "@/lib/month";
 import { formatPct } from "@/lib/money";
 import { cn } from "@/lib/utils";
-import { getReport } from "@/lib/reads";
+import { getReport, getSettings } from "@/lib/reads";
+import { labelIfFiscalYear } from "@/lib/fiscalYear";
 import type { VarianceRow } from "@/lib/variance";
 import { MoneyText } from "@/components/MoneyText";
 import { VarianceBar } from "@/components/VarianceBar";
@@ -62,14 +63,21 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
   const sp = await searchParams;
   const { from, to } = resolveRange(sp);
   const repo = await requireRepo(); // authenticate first — the cache never decides who is asking
-  const { rows, totals, lockedMonths } = await getReport(String(repo.uid), from, to);
+  const [{ rows, totals, lockedMonths }, { fiscalYearStartMonth }] = await Promise.all([
+    getReport(String(repo.uid), from, to),
+    getSettings(String(repo.uid)),
+  ]);
+  // Only when the range IS exactly one fiscal year — an arbitrary twelve-month
+  // selection must not be labelled as one.
+  const fyLabel = labelIfFiscalYear(from, to, fiscalYearStartMonth);
 
   const title = (
     <div className="mb-5 flex items-end justify-between gap-4">
       <div>
         <h1 className="font-display text-xl font-semibold tracking-tight">Variance report</h1>
         <p className="font-mono text-xs text-muted-foreground">
-          {formatMonthLabel(from)} – {formatMonthLabel(to)}
+          {formatMonthLabel(from)} - {formatMonthLabel(to)}
+          {fyLabel && <span className="ml-2 text-foreground">{fyLabel}</span>}
         </p>
       </div>
       {rows.length > 0 && (
@@ -116,8 +124,35 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
 
   const VarianceIcon = totals.variance < 0 ? TrendingDown : totals.variance > 0 ? TrendingUp : Minus;
 
+  /**
+   * Drill-down. The Actuals screen already IS the detail view for one
+   * category x month — it reads `?categoryId=&month=` and shows that cell's
+   * entry, its note and its provenance beside the form that edits it. So the
+   * feature is a link to it, not a second screen that would have to be kept in
+   * agreement with the first.
+   *
+   * `from`/`to` ride along so the header's range survives the trip and the
+   * back button lands on the same report.
+   */
+  const drillDown = (r: VarianceRow) =>
+    `/actuals?categoryId=${r.categoryId}&month=${r.month}&from=${from}&to=${to}`;
+
   const columns: Column<VarianceRow>[] = [
-    { key: "category", header: "Category", render: r => r.categoryName },
+    {
+      key: "category",
+      header: "Category",
+      render: r => (
+        <Link
+          href={drillDown(r)}
+          className="underline-offset-4 hover:underline focus-visible:underline"
+          // The row already says the month; a screen reader arriving at the
+          // link out of context should hear which cell it opens.
+          aria-label={`${r.categoryName}, ${formatMonthLabel(r.month)} — open the entries behind this row`}
+        >
+          {r.categoryName}
+        </Link>
+      ),
+    },
     {
       key: "month",
       header: "Month",
@@ -212,7 +247,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
       </div>
 
       <DataTable
-        caption="Variance by category and month"
+        caption="Variance by category and month · select a category to see the entries behind its row"
         columns={columns}
         rows={rows}
         rowKey={r => `${r.categoryId}-${r.month}`}
