@@ -7,9 +7,10 @@ import { z } from "zod";
 import { zActualCreate, zMonth } from "@/domain/schemas";
 import { assertPeriodUnlocked } from "@/domain/locking";
 import { toMinor } from "@/lib/money";
+import { getActuals } from "@/lib/reads";
 import { withRoute } from "@/lib/route";
 
-export const dynamic = "force-dynamic"; // per-user data, never cached
+export const dynamic = "force-dynamic"; // the response; the data is cached in lib/reads.ts
 
 /** Both filters optional; absent keys stay absent so the repo filter stays clean. */
 const zActualsQuery = z.object({
@@ -20,7 +21,7 @@ const zActualsQuery = z.object({
 export const GET = withRoute(async (req, repo) => {
   const params = [...req.nextUrl.searchParams].filter(([, v]) => v !== "");
   const query = zActualsQuery.parse(Object.fromEntries(params));
-  const actuals = await repo.listActuals(query);
+  const actuals = await getActuals(String(repo.uid), query.month, query.categoryId);
   return NextResponse.json({ actuals });
 });
 

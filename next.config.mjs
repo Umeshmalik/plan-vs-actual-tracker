@@ -61,6 +61,19 @@ const nextConfig = {
   // is off there — one config, both targets, no second next.config to drift.
   output: process.env.VERCEL ? undefined : "standalone",
 
+  // Turns on the `"use cache"` directive that lib/reads.ts is built from, and
+  // nothing else.
+  //
+  // ponytail: Next 16 warns that this is folded into `cacheComponents: true`,
+  // and that is the eventual upgrade — but it is not a rename. cacheComponents
+  // also switches the app to partial prerendering: it rejects the
+  // `dynamic = "force-dynamic"` on all five API routes and wants a Suspense
+  // boundary above every page that touches cookies or searchParams, which here
+  // is all of them. Every screen sits behind a session, so there is no static
+  // shell to prerender and the migration would buy skeletons, not speed. Worth
+  // doing the day a public page exists, or the day the flag stops working.
+  experimental: { useCache: true },
+
   // Applied to every route — pages, API and static assets alike. Per-response
   // headers (Cache-Control: no-store, x-request-id) are set in lib/route.ts.
   async headers() {

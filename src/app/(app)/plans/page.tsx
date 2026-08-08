@@ -7,29 +7,27 @@
 import { requireRepo } from "@/lib/auth";
 import { monthRange } from "@/lib/month";
 import { resolveRange, type SearchParams } from "@/lib/range";
+import { getCategories, getLockedMonths, getPlans } from "@/lib/reads";
 import { PlansGrid } from "./PlansGrid";
 
 export default async function Page({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams; // Next 16: searchParams is a Promise
   const { from, to } = resolveRange(sp);
-  const repo = await requireRepo();
+  const repo = await requireRepo(); // authenticate first — the cache never decides who is asking
+  const uid = String(repo.uid);
 
-  const [categories, plans, locks] = await Promise.all([
-    repo.listCategories(),
-    repo.listPlans(from, to),
-    repo.listLocks(from, to),
+  const [categories, plans, lockedMonths] = await Promise.all([
+    getCategories(uid),
+    getPlans(uid, from, to),
+    getLockedMonths(uid, from, to),
   ]);
 
   return (
     <PlansGrid
       months={monthRange(from, to)}
-      categories={categories.map(c => ({ id: String(c._id), name: c.name }))}
-      plans={plans.map(p => ({
-        categoryId: String(p.categoryId),
-        month: p.month,
-        amountMinor: p.amountMinor,
-      }))}
-      lockedMonths={locks.map(l => l.month)}
+      categories={categories.map(c => ({ id: c._id, name: c.name }))}
+      plans={plans}
+      lockedMonths={lockedMonths}
     />
   );
 }

@@ -13,8 +13,18 @@ import { ScopedRepo } from "../src/domain/repo";
 const state = vi.hoisted(() => ({
   repo: null as unknown as ScopedRepo,
   lines: [] as Record<string, unknown>[],
+  tags: [] as string[],
 }));
 vi.mock("../src/lib/auth", () => ({ requireRepo: async () => state.repo }));
+// next/cache reaches for a request-scoped store that only exists inside a real
+// Next server, so it is stubbed here — which is also what makes every assertion
+// below read live Mongo rather than an entry an earlier test filled. The tags
+// it records are the contract lib/route.ts owns: see the invalidation test.
+vi.mock("next/cache", () => ({
+  cacheTag: () => {},
+  cacheLife: () => {},
+  revalidateTag: (tag: string) => void state.tags.push(tag),
+}));
 // Capture the request log instead of printing it — the log line is a contract here.
 vi.mock("../src/lib/logger", () => ({
   log: { info: () => {} },
@@ -239,5 +249,33 @@ describe("REST layer", () => {
     expect(state.lines).toHaveLength(2);
     expect(state.lines[1]).toMatchObject({ method: "POST", status: 422 });
     expect(String(state.lines[1].requestId)).toMatch(/^[0-9a-f-]{36}$/); // minted when none came in
+  });
+
+  /**
+   * The other half of lib/reads.ts: the cache is only ever as fresh as this
+   * gate. A write that forgets to expire the tag shows the user yesterday's
+   * numbers, and a read that expires it throws the cache away on every render —
+   * so both directions are asserted, not just the happy one.
+   */
+  it("expires the tenant's cached reads on every write, and only on a write", async () => {
+    const tag = `user:${state.repo.uid}`;
+
+    state.tags.length = 0;
+    await categories.GET(req("/api/categories"));
+    await report.GET(req("/api/report?from=2026-01&to=2026-03"));
+    expect(state.tags).toEqual([]); // a read never invalidates
+
+    await categories.POST(req("/api/categories", "POST", { name: "" })); // 422
+    expect(state.tags).toEqual([]); // neither does a write that failed
+
+    await categories.POST(req("/api/categories", "POST", { name: "Freshness" }));
+    expect(state.tags).toEqual([tag]);
+
+    const [, b] = await json(await locks.POST(req("/api/locks", "POST", { month: "2026-04" })));
+    expect(b.month).toBe("2026-04");
+    await lockByMonth.DELETE(req("/api/locks/2026-04", "DELETE"), {
+      params: Promise.resolve({ month: "2026-04" }),
+    });
+    expect(state.tags).toEqual([tag, tag, tag]); // POST and DELETE alike
   });
 });

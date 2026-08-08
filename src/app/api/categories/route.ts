@@ -4,12 +4,13 @@
  */
 import { NextResponse } from "next/server";
 import { zCategoryCreate } from "@/domain/schemas";
+import { getCategories } from "@/lib/reads";
 import { withRoute } from "@/lib/route";
 
-export const dynamic = "force-dynamic"; // per-user data, never cached
+export const dynamic = "force-dynamic"; // the response; the data is cached in lib/reads.ts
 
 export const GET = withRoute(async (req, repo) => {
-  const categories = await repo.listCategories();
+  const categories = await getCategories(String(repo.uid));
   return NextResponse.json({ categories });
 });
 

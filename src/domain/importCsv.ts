@@ -23,6 +23,12 @@ export async function previewCsv(repo: ScopedRepo, csvText: string): Promise<Row
   if (!/^month\s*,\s*category\s*,\s*amount$/i.test(header ?? ""))
     return [{ line: 0, ok: false, error: 'Header must be exactly "month,category,amount".' }];
 
+  // Two reads for the whole file, not two per row. Both answers are the same
+  // for every line — the categories a user owns and the months they have
+  // closed do not change mid-file — so a 20k-row import used to spend 40,000
+  // round trips re-asking two questions it had already answered.
+  const [categoriesByName, lockedMonths] = await Promise.all([repo.categoriesByName(), repo.lockedMonths()]);
+
   const results: RowResult[] = [];
   for (let i = 0; i < body.length; i++) {
     const line = i + 1;
@@ -34,7 +40,7 @@ export async function previewCsv(repo: ScopedRepo, csvText: string): Promise<Row
       results.push({ line, ok: false, error: parsed.error.issues[0].message });
       continue;
     }
-    const cat = await repo.findCategoryByName(parsed.data.category.toLowerCase());
+    const cat = categoriesByName.get(parsed.data.category.toLowerCase());
     if (!cat) {
       results.push({
         line,
@@ -43,7 +49,7 @@ export async function previewCsv(repo: ScopedRepo, csvText: string): Promise<Row
       });
       continue;
     }
-    if (await repo.isLocked(parsed.data.month)) {
+    if (lockedMonths.has(parsed.data.month)) {
       results.push({
         line,
         ok: false,
@@ -79,9 +85,12 @@ export async function commitCsv(repo: ScopedRepo, csvText: string) {
   const session = await mongoose.startSession();
   try {
     await session.withTransaction(async () => {
-      for (const r of results) {
-        await repo.createActual({ ...r.parsed!, source: "import", importBatchId }, session);
-      }
+      // One insertMany, not an await per row: the transaction now holds its
+      // locks for a single round trip instead of one per line of the file.
+      await repo.createActuals(
+        results.map(r => ({ ...r.parsed!, source: "import" as const, importBatchId })),
+        session
+      );
     });
   } finally {
     await session.endSession();

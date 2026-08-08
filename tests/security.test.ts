@@ -31,6 +31,9 @@ vi.mock("../src/lib/auth", async importOriginal => ({
   requireRepo: async () => state.repo,
 }));
 vi.mock("../src/lib/logger", () => ({ log: { info: () => {} }, logRequest: () => {} }));
+// No Next request store out here, so next/cache has nothing to hang off — and
+// the reads under test should hit Mongo anyway. (See routes.test.ts.)
+vi.mock("next/cache", () => ({ cacheTag: () => {}, cacheLife: () => {}, revalidateTag: () => {} }));
 
 import { authorize } from "../src/lib/auth";
 import { allowAttempt, clearAttempts, AUTH_LIMIT } from "../src/lib/ratelimit";

@@ -92,16 +92,37 @@ describe("the hot reads are index seeks, not collection scans", () => {
     expect(totalDocsExamined).toBeLessThanOrEqual(nReturned * 2);
   });
 
-  it("listActuals seeks the exact category x month cell", async () => {
+  it("listActuals seeks the exact category x month cell, and never sorts it", async () => {
     const { plan, nReturned, totalKeysExamined, totalDocsExamined } = await explain(
       repo.listActuals({ month: FROM, categoryId: String(catIds[0]) })
     );
 
     expect(plan).toContain("IXSCAN");
     expect(plan).not.toContain("COLLSCAN");
+    // The trailing createdAt key earns its place here: this is the one read
+    // whose result set may reach ACTUALS_LIMIT, and a blocking SORT would
+    // buffer every one of those rows before the limit applied. Drop createdAt
+    // from the index and this line fails while every count below still passes.
+    expect(plan).not.toContain('"stage":"SORT"');
     expect(nReturned).toBe(1);
     expect(totalKeysExamined).toBeLessThanOrEqual(2);
     expect(totalDocsExamined).toBeLessThanOrEqual(2);
+  });
+
+  it("the category-only drill-down seeks per month instead of scanning", async () => {
+    // No {userId, categoryId} index exists, and none is needed: month carries a
+    // couple of dozen distinct values, so the planner turns the categoryId
+    // equality into one interval per month rather than a walk of the tenant's
+    // whole history. Asserted because "add an index for it" is the tempting
+    // wrong answer — this proves the read is already a seek.
+    const { plan, nReturned, totalKeysExamined } = await explain(
+      repo.listActuals({ categoryId: String(catIds[0]) })
+    );
+
+    expect(plan).toContain("IXSCAN");
+    expect(plan).not.toContain("COLLSCAN");
+    expect(nReturned).toBe(MONTHS.length);
+    expect(totalKeysExamined).toBeLessThanOrEqual(nReturned * 2);
   });
 
   it("listActuals caps an unfiltered read at its documented ceiling", async () => {

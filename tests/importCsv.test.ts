@@ -18,7 +18,8 @@ const countActuals = async () => (await repo.listActuals({})).length;
 
 beforeAll(async () => {
   mongod = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
-  await mongoose.connect(mongod.getUri());
+  // monitorCommands is what lets the last test below count round trips.
+  await mongoose.connect(mongod.getUri(), { monitorCommands: true });
   repo = new ScopedRepo(new Types.ObjectId());
   await repo.createCategory("Marketing");
   await repo.createCategory("Payroll");
@@ -108,5 +109,49 @@ describe("commitCsv is all-or-nothing", () => {
     expect(written.every(a => a.source === "import")).toBe(true);
     expect(written.map(a => a.amountMinor).sort((x, y) => x - y)).toEqual([10000, 20000, 30000]);
     expect(await countActuals()).toBe(before + 3);
+  });
+});
+
+/**
+ * The import used to ask the database two questions per row — "does this
+ * category exist?" and "is this month locked?" — whose answers cannot change
+ * mid-file. At the 1 MB body limit that is ~40,000 round trips to learn two
+ * things. Both are read once up front now, and the commit is a single
+ * insertMany rather than an await per row.
+ *
+ * Counting round trips rather than timing them: a wall-clock assertion would be
+ * flaky, and the thing that actually regresses is a query moving back inside
+ * the loop, which shows up here immediately and at any file size.
+ */
+describe("import cost does not scale with file size", () => {
+  const countRoundTrips = async (commands: string[], run: () => Promise<unknown>) => {
+    const client = mongoose.connection.getClient();
+    let n = 0;
+    const tally = (e: { commandName: string }) => void (commands.includes(e.commandName) && n++);
+    client.on("commandStarted", tally);
+    try {
+      await run();
+    } finally {
+      client.off("commandStarted", tally);
+    }
+    return n;
+  };
+
+  const rows = (n: number) => csv(...Array.from({ length: n }, (_, i) => `2026-02,Marketing,${i + 1}`));
+
+  it("previews 200 rows with the same number of reads as 2", async () => {
+    const two = await countRoundTrips(["find"], () => previewCsv(repo, rows(2)));
+    const twoHundred = await countRoundTrips(["find"], () => previewCsv(repo, rows(200)));
+
+    expect(two).toBe(2); // one for the categories, one for the locked months
+    expect(twoHundred).toBe(two);
+  });
+
+  it("commits 200 rows in one insert, not 200", async () => {
+    const before = await countActuals();
+    const inserts = await countRoundTrips(["insert"], () => commitCsv(repo, rows(200)));
+
+    expect(inserts).toBe(1);
+    expect(await countActuals()).toBe(before + 200);
   });
 });
