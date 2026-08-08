@@ -8,6 +8,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import mongoose, { Types } from "mongoose";
 import { NextRequest } from "next/server";
+import { M } from "../src/domain/models";
 import { ScopedRepo } from "../src/domain/repo";
 
 const state = vi.hoisted(() => ({
@@ -57,6 +58,11 @@ const json = async (r: Response) => [r.status, await r.json()] as const;
 beforeAll(async () => {
   mongod = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   await mongoose.connect(mongod.getUri());
+  // Every unique index this file asserts — duplicate category, one entry per
+  // cell — is built in the BACKGROUND by autoIndex, so a fast first write can
+  // land before the constraint exists and the assertion fails for a reason that
+  // has nothing to do with the code. Wait for all of them rather than racing.
+  await Promise.all(Object.values(M).map(model => model.init()));
   state.repo = new ScopedRepo(new Types.ObjectId());
 });
 afterAll(async () => {
