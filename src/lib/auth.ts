@@ -8,19 +8,15 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { Types } from "mongoose";
-import { z } from "zod";
 import { connectDb } from "./db";
 import { AppError } from "./errors";
 import { allowAttempt, clearAttempts } from "./ratelimit";
 import { M } from "@/domain/models";
 import { ScopedRepo } from "@/domain/repo";
-
-const zCredentials = z.object({
-  // Normalise first, then check the format: `.email()` is deprecated in Zod 4,
-  // and piping into `z.email()` keeps the checks in that order.
-  email: z.string().trim().toLowerCase().pipe(z.email("Enter a valid email address")),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-});
+// Sign-up and sign-in share one definition of a credential, so an address
+// normalised at sign-up is normalised identically here. domain/users.ts owns it
+// (and the hashing) because this module cannot be imported outside a Next build.
+import { zCredentials } from "@/domain/users";
 
 /**
  * A real cost-12 hash of a discarded random string, compared against whenever

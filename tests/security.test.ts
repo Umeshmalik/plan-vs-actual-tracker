@@ -36,6 +36,8 @@ vi.mock("../src/lib/logger", () => ({ log: { info: () => {} }, logRequest: () =>
 vi.mock("next/cache", () => ({ cacheTag: () => {}, cacheLife: () => {}, revalidateTag: () => {} }));
 
 import { authorize } from "../src/lib/auth";
+import { createUser } from "../src/domain/users";
+import { MIN_SCORE, passwordStrength } from "../src/lib/password";
 import { allowAttempt, clearAttempts, AUTH_LIMIT } from "../src/lib/ratelimit";
 import { MAX_BODY_BYTES } from "../src/lib/route";
 import "../src/lib/db"; // importing it is what turns sanitizeFilter on
@@ -53,6 +55,9 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 beforeAll(async () => {
   mongod = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   await mongoose.connect(mongod.getUri());
+  // The duplicate-address sign-up test asserts the unique {email} index, which
+  // autoIndex builds in the background — wait for it instead of racing it.
+  await Promise.all(Object.values(M).map(model => model.init()));
 
   userId = new Types.ObjectId();
   state.repo = new ScopedRepo(userId);
@@ -88,6 +93,76 @@ describe("sign-in does not leak which addresses exist", () => {
     expect(compare).toHaveBeenCalledTimes(1);
 
     compare.mockRestore();
+  });
+});
+
+describe("sign-up creates an account the sign-in path accepts", () => {
+  it("normalises the address, and authorize takes it straight away", async () => {
+    clearAttempts();
+    // Mixed case and padding: if sign-up and sign-in normalised differently,
+    // this account could never be signed into again.
+    await expect(
+      createUser({ email: "  New.User@Example.COM ", password: "a-good-password" })
+    ).resolves.toMatchObject({ email: "new.user@example.com" });
+
+    await expect(
+      authorize({ email: "new.user@example.com", password: "a-good-password" })
+    ).resolves.toMatchObject({ email: "new.user@example.com" });
+  });
+
+  it("refuses a second account for the same address", async () => {
+    clearAttempts();
+    await createUser({ email: "taken@example.com", password: "a-good-password" });
+    await expect(createUser({ email: "TAKEN@example.com", password: "another-password" })).rejects.toThrow(
+      /already has an account/
+    );
+    expect(await M.User.countDocuments({ email: "taken@example.com" })).toBe(1);
+  });
+
+  it("refuses a short password and a malformed address, writing nothing", async () => {
+    clearAttempts();
+    await expect(createUser({ email: "short@example.com", password: "1234567" })).rejects.toThrow(
+      /at least 8 characters/
+    );
+    await expect(createUser({ email: "not-an-email", password: "a-good-password" })).rejects.toThrow(
+      /valid email/
+    );
+    expect(await M.User.countDocuments({ email: "short@example.com" })).toBe(0);
+  });
+
+  it("refuses a weak password server-side, not just in the form", async () => {
+    clearAttempts();
+    // Each one passes the 8-character floor and still must not become an account.
+    for (const password of ["password", "12345678", "aaaaaaaa", "abcdefgh"]) {
+      await expect(createUser({ email: `weak-${password}@example.com`, password })).rejects.toThrow();
+    }
+    // …and the address itself is not a password.
+    await expect(createUser({ email: "alice@example.com", password: "alice12345" })).rejects.toThrow(
+      /email address/
+    );
+    expect(await M.User.countDocuments({ email: /^weak-/ })).toBe(0);
+  });
+
+  it("the seeded demo passwords still clear the bar the sign-up form holds", () => {
+    // The seed script and the README hand these out; a policy that rejected them
+    // would make the documented logins unreproducible through the UI.
+    for (const password of ["review-me-2026", "tenant-b-2026"]) {
+      expect(passwordStrength(password).score).toBeGreaterThanOrEqual(MIN_SCORE);
+      expect(passwordStrength(password).hint).toBeUndefined();
+    }
+  });
+
+  it("caps how fast one address can be probed for existing accounts", async () => {
+    clearAttempts();
+    // The duplicate error is a user-enumeration oracle; the rate limiter is what
+    // bounds how fast it can be read. Same counter, its own key space.
+    for (let i = 0; i < AUTH_LIMIT; i++) {
+      await createUser({ email: "probe@example.com", password: "a-good-password" }).catch(() => {});
+    }
+    await expect(createUser({ email: "probe@example.com", password: "a-good-password" })).rejects.toThrow(
+      /Too many attempts/
+    );
+    clearAttempts();
   });
 });
 
