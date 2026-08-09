@@ -12,6 +12,7 @@
  * real control rather than decoration.
  */
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { type CurrencyCode } from "@/lib/currency";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
 
@@ -19,15 +20,27 @@ const W = 150;
 const H = 14;
 const MID = W / 2;
 
+/**
+ * The sign's colour, in one place. It lives here because this is the module
+ * that decides a variance is ledger green or accounting red; the report table,
+ * the ranked chart and the monthly chart all read the rule from the mark that
+ * draws it rather than each restating it. Semantic only — negative variance is
+ * under plan, which is favourable.
+ */
+export const varianceTone = (v: number) => (v < 0 ? "text-ledger" : v > 0 ? "text-acct" : undefined);
+
 export function VarianceBar({
   variance,
   max,
   hasActuals,
+  currency,
   label,
 }: {
   variance: number;
   max: number;
   hasActuals: boolean;
+  /** Only used when `label` is absent — the generated sentence quotes a figure. */
+  currency: CurrencyCode;
   /** Overrides the generated sentence in the tooltip and the accessible name. */
   label?: string;
 }) {
@@ -42,7 +55,7 @@ export function VarianceBar({
       ? "no actuals recorded"
       : variance === 0
         ? "on plan"
-        : `${formatMoney(Math.abs(variance))} ${over ? "over" : "under"} plan`);
+        : `${formatMoney(Math.abs(variance), currency)} ${over ? "over" : "under"} plan`);
 
   return (
     <Tooltip>

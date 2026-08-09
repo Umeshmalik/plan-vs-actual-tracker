@@ -31,6 +31,7 @@ import { DataTable, type Column } from "@/components/DataTable";
 import { EmptyState } from "@/components/EmptyState";
 import { LockChip } from "@/components/LockChip";
 import { MoneyText } from "@/components/MoneyText";
+import { type CurrencyCode } from "@/lib/currency";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -63,7 +64,7 @@ const AUTO_PREVIEW_WAIT = 800;
 
 type Csv = { csv: string };
 
-export function ImportFlow() {
+export function ImportFlow({ currency }: { currency: CurrencyCode }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [csv, setCsv] = useState("");
@@ -176,7 +177,7 @@ export function ImportFlow() {
       key: "amount",
       header: "Amount",
       numeric: true,
-      render: r => (r.parsed ? <MoneyText minor={r.parsed.amountMinor} /> : DASH),
+      render: r => (r.parsed ? <MoneyText currency={currency} minor={r.parsed.amountMinor} /> : DASH),
     },
     {
       key: "status",

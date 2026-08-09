@@ -58,11 +58,15 @@ These are the ones where a wrong change still compiles, still passes a casual sm
 
 **Money is integer minor units end to end.** Requests take major units (`amount: 5000` = 5,000.00); everything stored and returned is minor. Only `money.ts` converts, only at the route boundary; the UI never does arithmetic.
 
+**Currency is a display label, never a conversion, and every supported code has exactly two decimals.** `lib/currency.ts` is the whole list; the user's choice is a preference on `users` and reaches figures as an explicit `currency` prop (required on `MoneyText`/`VarianceBar`, threaded from each page's `getSettings`) — never a module-level default, which would be one process-wide value shared across tenants. Switching currency relabels; nothing stored is converted, and there are no FX rates. Adding a currency with a different exponent (JPY 0, KWD 3) is **not** a new row in that table: minor units are hundredths everywhere, so it changes what every existing document means.
+
 **Months are `YYYY-MM` strings**, never `Date`. Lexicographic order is chronological, so ranges are plain `$gte`/`$lte` and there are no timezones anywhere.
 
 **`variancePct` is `null` when `plan === 0`** — never `NaN`, never `Infinity`. One function, `variancePct()`. Nothing else in the codebase divides by a plan.
 
 **One entry per category × month.** `Actual` carries a unique `{userId, categoryId, month}` index, so every write upserts: `repo.upsertActual()` for a single cell, `repo.createActuals()` (one `bulkWrite`) for an import. There is no plain insert — posting the same cell twice replaces the figure rather than adding a row the report would silently sum. `previewCsv` rejects a second row for a cell already claimed earlier in the same file.
+
+**A schema edit that never reaches mongoose looks exactly like a broken feature.** Mongoose caches a compiled model by name on its singleton; Next's dev server re-executes `models.ts` on hot reload while that singleton survives, so the FIRST schema of the session wins — and `strict: true` then discards an update to a field the stale schema lacks _silently_: 200 OK, response missing the key, value unchanged, nothing in the log. `compile()` in `models.ts` deletes and recompiles in development for exactly this, and `updateSettings` reads its own write back and throws if what came back is not what it set. Any new write path to a new field wants the same read-back.
 
 **A unique index that cannot be BUILT looks exactly like one that is working.** Mongoose builds in the background and swallows the failure, so the app comes up with no constraint and nothing on screen to say so. Two things trigger it: rows that already violate the constraint, and — the one that actually bit us — documents in the collection that lack the indexed fields entirely, which all index as null and collide with each other. The `categories` collection is shared with another application, so its unique index carries `partialFilterExpression: {normalizedName: {$type: "string"}}` to cover our rows only. Never call `syncIndexes()` against these collections: it DROPS every index the schema does not declare, including the neighbour's.
 
@@ -84,6 +88,8 @@ These are the ones where a wrong change still compiles, still passes a casual sm
 **Errors:** throw `AppError(code, message)`. `code` → status is the map in `errors.ts` (`VALIDATION_FAILED` 422 · `PERIOD_LOCKED` 409 · `UNKNOWN_CATEGORY` 422 · `DUPLICATE_PLAN` 409 · `UNAUTHORIZED` 401 · `NOT_FOUND` 404). The frontend renders `message` verbatim, so the wording _is_ the user-facing string — write it that way.
 
 **Missing actual = 0 everywhere** (row, totals, chart), with `hasActuals: false` on the row so "spent nothing" stays visibly distinct from "no data". The symmetric case, an actual with no plan, is `hasPlan: false` and falls out of the report's `$unionWith` for free.
+
+**Never net a month down to one signed number.** `byMonth()` in `lib/variance.ts` keeps `over` and `under` apart, and the report's monthly chart stacks one segment per category, because a month with a large overspend and an equally large underspend nets to zero and draws exactly like a month that landed on plan — which is what the chart used to do. `hasData:false` carries the same distinction the rows make with `hasActuals`: a month nobody touched is not a zero. `tests/variance.test.ts` pins both.
 
 ## Config notes
 

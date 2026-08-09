@@ -8,6 +8,7 @@ import { DEFAULT_RANGE } from "@/lib/range";
 import { getSettings } from "@/lib/reads";
 import { SectionTabs } from "@/components/Tabs";
 import { MonthRangePicker } from "@/components/MonthRangePicker";
+import { CurrencyPicker } from "@/components/CurrencyPicker";
 import { RefreshButton } from "@/components/RefreshButton";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,7 +28,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // The wordmark used to print a hard-coded "fy 2026". It now names the fiscal
   // year the user's own start month puts us in, which is also the one the range
   // picker's FY buttons are anchored on.
-  const { fiscalYearStartMonth } = await getSettings(user.id);
+  const { fiscalYearStartMonth, currency } = await getSettings(user.id);
   const currentFy = fiscalYearLabel(
     fiscalYearOf(DEFAULT_RANGE.from, fiscalYearStartMonth),
     fiscalYearStartMonth
@@ -58,6 +59,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <Suspense fallback={<Skeleton className="ml-auto h-8 w-44" />}>
             <MonthRangePicker fiscalYearStartMonth={fiscalYearStartMonth} />
           </Suspense>
+
+          <CurrencyPicker currency={currency} />
 
           <RefreshButton />
 
