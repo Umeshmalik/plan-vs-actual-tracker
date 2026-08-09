@@ -15,7 +15,7 @@ import { zCategoryCreate } from "@/domain/schemas";
 import { fieldErrors } from "@/lib/api";
 import { formatMonthLabel } from "@/lib/month";
 import { toMajor } from "@/lib/money";
-import { useApiMutation } from "@/lib/useApiMutation";
+import { useApiMutation, type ApiEnvelopeError } from "@/lib/useApiMutation";
 import { cn } from "@/lib/utils";
 import { Banner } from "@/components/Banner";
 import { EmptyState } from "@/components/EmptyState";
@@ -62,6 +62,13 @@ interface CellVars {
 
 const cellKey = (categoryId: string, month: string) => `${categoryId}:${month}`;
 
+/** Drop one key from a cell-keyed map. */
+const without = (key: string) => (map: Record<string, string>) => {
+  const next = { ...map };
+  delete next[key];
+  return next;
+};
+
 /** UTC-pinned so no local timezone gets a vote. */
 const monthName = (month: string) =>
   new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1)).toLocaleString("en-US", {
@@ -86,6 +93,9 @@ export function PlansGrid({
   lockedMonths: string[];
 }) {
   const [draft, setDraft] = useState<Record<string, string>>({});
+  // Per cell, so the banner says WHAT and the cell says WHERE; a failing cell
+  // stays marked while other cells are edited.
+  const [cellError, setCellError] = useState<Record<string, string>>({});
   const [addOpen, setAddOpen] = useState(false);
 
   // Which cell holds the caret — a save landing mid-typing must not pull the
@@ -147,12 +157,7 @@ export function PlansGrid({
   // Field-named issues render under their input; the rest fall to the Banner.
   const serverCategoryError = fieldErrors(addCategory.envelope).name;
 
-  const clearDraft = (key: string) =>
-    setDraft(d => {
-      const next = { ...d };
-      delete next[key];
-      return next;
-    });
+  const clearDraft = (key: string) => setDraft(without(key));
 
   /** The debounce, blur and Enter all land here. Unchanged values send nothing. */
   function saveCell(categoryId: string, month: string) {
@@ -163,7 +168,11 @@ export function PlansGrid({
 
     // Every no-op: already-empty cell, value retyped as-is, or a value the
     // debounce already saved that differs only in the server's formatting.
-    if (amount === (saved[key] ?? "") || amount === sent.current[key]) return clearDraft(key);
+    // Typing the stored value back IS a fix, so the mark clears with no write.
+    if (amount === (saved[key] ?? "") || amount === sent.current[key]) {
+      setCellError(without(key));
+      return clearDraft(key);
+    }
 
     inFlight.current.add(key);
     sent.current[key] = amount;
@@ -171,11 +180,14 @@ export function PlansGrid({
       // Keep the typed text while the caret is in the cell; once the user leaves,
       // drop the draft so the server's formatting shows through.
       onSuccess: () => {
+        setCellError(without(key));
         if (focused.current !== key) clearDraft(key);
       },
-      // Keep the draft so the typed value stays beside the banner and is retriable.
-      onError: () => {
+      // Keep the draft so the typed value stays beside the banner and is retriable,
+      // and mark the cell itself — "fix the highlighted fields" needs a highlight.
+      onError: (err: ApiEnvelopeError) => {
         delete sent.current[key];
+        setCellError(e => ({ ...e, [key]: fieldErrors(err.envelope).amount ?? err.envelope.message }));
       },
       onSettled: () => {
         inFlight.current.delete(key);
@@ -344,6 +356,7 @@ export function PlansGrid({
                     const locked = isLocked(month);
                     const key = cellKey(category.id, month);
                     const saving = busyCell === key;
+                    const invalid = cellError[key];
                     return (
                       <TableCell
                         key={month}
@@ -357,6 +370,8 @@ export function PlansGrid({
                             placeholder={locked ? "—" : "0.00"}
                             readOnly={locked}
                             aria-busy={saving}
+                            aria-invalid={invalid ? true : undefined}
+                            aria-describedby={invalid ? `${key}-error` : undefined}
                             value={draft[key] ?? saved[key] ?? ""}
                             aria-label={`${category.name} target for ${formatMonthLabel(month)}${locked ? ", locked" : ""}`}
                             onChange={e => {
@@ -378,6 +393,15 @@ export function PlansGrid({
                               className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 animate-spin text-muted-foreground"
                               aria-hidden
                             />
+                          )}
+                          {invalid && (
+                            <span
+                              id={`${key}-error`}
+                              role="alert"
+                              className="mt-1 block w-28 text-[0.7rem] leading-tight text-balance text-destructive"
+                            >
+                              {invalid}
+                            </span>
                           )}
                         </span>
                       </TableCell>
