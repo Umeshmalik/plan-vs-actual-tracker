@@ -1,9 +1,7 @@
 /**
- * The fiscal-year rule, which is pure arithmetic and therefore worth pinning
- * exactly: every off-by-one here is a report that silently covers the wrong
- * twelve months. The April start is the interesting case (UK/India), December
- * is the one that carries across a year boundary in both directions, and
- * January must stay indistinguishable from a calendar year.
+ * Pure arithmetic, so every off-by-one is a report covering the wrong twelve
+ * months. April is the interesting start, December carries across the year
+ * boundary, January must stay indistinguishable from a calendar year.
  */
 import { describe, it, expect } from "vitest";
 import {

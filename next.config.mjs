@@ -1,81 +1,52 @@
 const isDev = process.env.NODE_ENV === "development";
 
-/**
- * One CSP for the whole app, and it can be this tight because the app has no
- * third-party origins at all: no CDN, no analytics, no tag manager, no hosted
- * font service. next/font self-hosts Archivo / Bitter / IBM Plex Mono out of
- * /_next/static, recharts draws inline SVG rather than loading anything, and
- * the only network calls the browser makes are same-origin fetches to /api.
- * So `default-src 'self'` holds, and every directive below narrows it further.
- */
+// `default-src 'self'` holds because the app has ZERO third-party origins —
+// next/font self-hosts, recharts draws inline SVG, and every fetch is same-origin.
 const csp = [
   "default-src 'self'",
 
-  // Next's App Router ships the RSC payload and the bootstrap in inline
-  // <script> tags. Those carry a nonce only if a middleware mints one per
-  // request; this app has no middleware, so 'unsafe-inline' is required in
-  // production too — dropping it renders a blank page, not a hardened one.
-  // ponytail: the upgrade is a middleware that generates a per-request nonce
-  // and swaps this for `'nonce-…' 'strict-dynamic'`. Worth doing the day this
-  // app renders anything a user typed into a <script>-adjacent position; today
-  // every value it prints goes through React's escaping.
-  // 'unsafe-eval' is dev-only: the dev bundler evals modules for hot reload.
-  // Production never gets it.
+  // Next's App Router ships the RSC payload in inline <script> tags with no
+  // nonce unless a middleware mints one, so dropping 'unsafe-inline' renders a
+  // blank page rather than a hardened one. 'unsafe-eval' is dev-only (HMR).
+  // ponytail: upgrade is a middleware nonce + 'strict-dynamic'.
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
 
-  // Tailwind v4 and next/font both emit an inline <style>, and React writes
-  // style attributes (the chart sizes itself that way). No way around it
-  // without a nonce, and the risk is far lower than for script.
+  // Tailwind v4, next/font and React's style attributes all emit inline style.
   "style-src 'self' 'unsafe-inline'",
 
-  "img-src 'self' data:", // data: for inline SVG/blob icons
-  "font-src 'self'", // next/font self-hosts — nothing from fonts.gstatic.com
-  // Same-origin XHR/fetch only. Dev adds the HMR websocket.
-  `connect-src 'self'${isDev ? " ws: wss:" : ""}`,
-  "frame-ancestors 'none'", // the modern half of X-Frame-Options
-  "form-action 'self'", // a stolen form cannot post the session anywhere else
-  "base-uri 'self'", // no <base> rewrite of every relative URL
-  "object-src 'none'", // no Flash/applet/embed surface at all
+  "img-src 'self' data:",
+  "font-src 'self'",
+  `connect-src 'self'${isDev ? " ws: wss:" : ""}`, // dev adds the HMR websocket
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
 ].join("; ");
 
 const securityHeaders = [
   { key: "Content-Security-Policy", value: csp },
-  // App Runner terminates TLS in front of this container, so the browser should
-  // never try http:// again. Two years, subdomains included, preload-eligible.
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
-  // No MIME sniffing: a JSON error envelope can never be executed as script.
   { key: "X-Content-Type-Options", value: "nosniff" },
-  // Send the origin cross-site, the full URL same-site: ?from=&to=&categoryId=
-  // are one tenant's business, and they live in the query string.
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  // Clickjacking, for browsers older than frame-ancestors. Nothing embeds this.
   { key: "X-Frame-Options", value: "DENY" },
-  // A finance tracker asks for no hardware. Deny it up front.
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
 ];
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Standalone output is what makes the Dockerfile's runtime image small. Vercel
-  // builds its own serverless bundle and standalone only gets in its way, so it
-  // is off there — one config, both targets, no second next.config to drift.
+  // Standalone keeps the Docker runtime image small; Vercel builds its own bundle.
   output: process.env.VERCEL ? undefined : "standalone",
 
-  // Turns on the `"use cache"` directive that lib/reads.ts is built from, and
-  // nothing else.
+  // The `"use cache"` directive lib/reads.ts is built from.
   //
-  // ponytail: Next 16 warns that this is folded into `cacheComponents: true`,
-  // and that is the eventual upgrade — but it is not a rename. cacheComponents
-  // also switches the app to partial prerendering: it rejects the
-  // `dynamic = "force-dynamic"` on all five API routes and wants a Suspense
-  // boundary above every page that touches cookies or searchParams, which here
-  // is all of them. Every screen sits behind a session, so there is no static
-  // shell to prerender and the migration would buy skeletons, not speed. Worth
-  // doing the day a public page exists, or the day the flag stops working.
+  // ponytail: Next 16 wants `cacheComponents: true`, which is NOT a rename — it
+  // also switches on partial prerendering, which rejects the `force-dynamic` on
+  // every API route and wants a Suspense boundary above every page reading
+  // cookies or searchParams. All of them do, and all sit behind a session, so
+  // the migration buys skeletons rather than speed. Revisit for a public page.
   experimental: { useCache: true },
 
-  // Applied to every route — pages, API and static assets alike. Per-response
-  // headers (Cache-Control: no-store, x-request-id) are set in lib/route.ts.
+  // Per-response headers (no-store, x-request-id) are set in lib/route.ts.
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

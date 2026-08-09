@@ -1,11 +1,4 @@
-/**
- * EmptyState — an invitation with one action, in the house voice.
- * Bitter headline, sentence case, no illustration, no apology.
- *
- * It fills the region it stands in rather than floating as a narrow card in
- * the middle of the page: an empty state is the content, not an aside. The
- * prose inside is width-capped for readability, the card is not.
- */
+/** An invitation with one action. It fills its region; only the prose is width-capped. */
 import type { ReactNode } from "react";
 import { Inbox } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";

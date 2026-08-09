@@ -1,33 +1,13 @@
 "use client";
 
 /**
- * MonthlyVarianceChart — variance per month as a DIVERGING STACKED bar.
+ * Variance per month as a DIVERGING STACKED bar — one segment per category, so
+ * an overspend and an equal underspend cannot cancel into a month that looks
+ * on plan. A month with no data is not a zero bar; `hasData:false` is said in
+ * words instead. Grouping is byMonth/byCategory in lib/variance.ts.
  *
- * It used to net each month into a single bar, which is the one thing this
- * chart must not do: an overspend and an underspend of the same size cancel to
- * nothing, so a month where two categories both missed badly drew as a month
- * that landed on plan. Every category is now its own segment — over plan
- * stacks up in accounting red, under plan stacks down in ledger green, via
- * recharts `stackOffset="sign"`. The two ends read as the month's gross over
- * and gross under, the net is the distance between them, and nothing cancels.
- *
- * A month with no plans and no actuals is NOT a zero bar. Zero means "landed
- * exactly on plan", and the two have to stay distinguishable — the same
- * distinction the table draws with `hasActuals`. Those months carry
- * `hasData:false`, which the tooltip, the accessible summary and a note under
- * the plot all say out loud rather than drawing an empty slot and hoping.
- *
- * Segments read their value through a function dataKey rather than a string:
- * recharts treats a dataKey containing dots as a nested path, and a category
- * may well be called "R&D. Misc".
- *
- * The grouping itself is `byMonth`/`byCategory` in lib/variance.ts — pure and
- * unit-tested beside the rest of the variance math. This file only draws it.
- *
- * On shadcn's ChartContainer so it inherits the theme instead of restyling
- * recharts by hand. Ink axes, flat token fills, zero reference line, no
- * animation, no gradient. Values arrive as minor units and are formatted by
- * lib/money like every other figure.
+ * Segments use a FUNCTION dataKey: recharts reads a dot in a string key as a
+ * nested path, and a category may be called "R&D. Misc".
  */
 import { Bar, BarChart, type BarShapeProps, Rectangle, ReferenceLine, XAxis, YAxis } from "recharts";
 import { type ChartConfig, ChartContainer, ChartTooltip } from "@/components/ui/chart";
@@ -38,61 +18,34 @@ import { formatMonthLabel, isMonth } from "@/lib/month";
 import { cn } from "@/lib/utils";
 import { byCategory, byMonth, type MonthVariance, type VarianceRow } from "@/lib/variance";
 
-/**
- * Empty on purpose. ChartContainer wants a config to inject CSS variables for
- * named series; this chart has no named series — it has one measure and two
- * poles, and both are already tokens. Nothing to declare.
- */
+/** Empty on purpose: no named series, and both poles are already tokens. */
 const chartConfig = {} satisfies ChartConfig;
 
 const TICK = { fontSize: 10, fontFamily: "var(--font-mono)" };
-/** Surface gap between stacked segments — a rule between fills, never a border. */
 const GAP = 2;
-/** A twenty-row tooltip is unreadable; the rest of the month is in the table. */
 const TOOLTIP_ROWS = 6;
-/** Past this, naming every empty month is longer than the chart it explains. */
 const NAME_EMPTY_UP_TO = 3;
 
 const monthLabel = (m: unknown) => (isMonth(m) ? formatMonthLabel(m) : String(m));
 
 /**
- * A recharts bar rect, inset by the surface gap.
- *
- * The normalisation is the whole point. Recharts computes a segment as
- * `y = scale(end)` and `height = scale(start) - scale(end)` (Bar.js), and pixel
- * y grows DOWNWARD — so for a segment below the axis the height comes back
- * NEGATIVE and `y` is its bottom edge, not its top. Insetting that naively
- * (`height - GAP`) drives an already-negative number further negative, the
- * `Math.max(…, 1)` floor catches it, and every under-plan segment draws as a
- * 1px hairline parked at the far end of the block it should have filled —
- * which reads on screen as a stray line with a large gap above it.
- *
- * Taking `min(y, y + height)` for the top and `abs(height)` for the size is
- * correct under both sign conventions, so it stays right if recharts ever
- * normalises this itself.
- *
- * Exported for `tests/chartGeometry.test.ts`: this is sign arithmetic that
- * fails silently and looks like a data problem rather than a drawing one.
+ * A bar rect inset by the surface gap. Recharts hands back a NEGATIVE height for
+ * a segment below the axis, so the min/abs normalisation is load-bearing —
+ * insetting naively draws every under-plan segment as a 1px hairline.
+ * Exported for tests/chartGeometry.test.ts.
  */
 export function segmentRect(y: number, height: number, gap = GAP) {
   return {
     y: Math.min(y, y + height) + gap / 2,
-    // A segment thinner than the gap still has to be visible, hence the floor.
     height: Math.max(Math.abs(height) - gap, 1),
   };
 }
 
-/**
- * Per-segment fill and geometry. `<Cell>` is deprecated in recharts 3.10
- * (removed in 4.0); Bar's `shape` is the supported replacement and gets the
- * whole datum on `payload`, so a segment can read its own signed value and pick
- * its pole.
- */
+/** `<Cell>` is deprecated in recharts 3.10; Bar's `shape` is the replacement. */
 const segment = (id: string) =>
   function Segment(props: BarShapeProps) {
     const v = (props.payload as MonthVariance | undefined)?.byCategory[id] ?? 0;
-    // A zero segment has no height. Without this guard the gap inset would
-    // still draw it as a 1px rule sitting on the axis.
+    // Without this the gap inset draws a zero segment as a rule on the axis.
     if (v === 0) return <g />;
     return (
       <Rectangle
@@ -103,12 +56,8 @@ const segment = (id: string) =>
     );
   };
 
-/**
- * Recharts clones the element it is handed with `active`/`payload`, which is
- * why those two are optional. Figures are read off the datum rather than off
- * the payload entries: under `stackOffset="sign"` an entry can carry the
- * stacked range instead of the value, and the datum always has the value.
- */
+// Recharts clones this with active/payload, hence the optionals. Figures come
+// off the datum: under stackOffset="sign" an entry may carry the stacked range.
 function MonthTooltip({
   active,
   payload,
@@ -159,7 +108,7 @@ function MonthTooltip({
   );
 }
 
-/** The plot in words. It must never claim "on plan" for a month with no data. */
+/** The plot in words. Never claims "on plan" for a month with no data. */
 const describe = (data: MonthVariance[], currency: CurrencyCode) =>
   data
     .map(d => {
@@ -185,8 +134,7 @@ export function MonthlyVarianceChart({
   if (months.length === 0) return null;
 
   const data = byMonth(rows, months);
-  // Ordered by |range variance|, so the biggest contributor sits nearest the
-  // axis and the stacking order is the same on every render.
+  // By |range variance|, so the stacking order is stable across renders.
   const names = byCategory(rows);
   const empty = data.filter(d => !d.hasData);
 
@@ -231,9 +179,7 @@ export function MonthlyVarianceChart({
         </BarChart>
       </ChartContainer>
       {empty.length > 0 && (
-        // An empty slot on the axis is indistinguishable from a month that
-        // landed exactly on plan, so the difference is said in words. Naming
-        // every one of them stops helping once the list is longer than a line.
+        // An empty slot looks exactly like a month that landed on plan.
         <p className="pt-2 text-xs text-muted-foreground">
           {empty.length <= NAME_EMPTY_UP_TO
             ? `No plans or actuals in ${empty.map(d => formatMonthLabel(d.month)).join(", ")}.`

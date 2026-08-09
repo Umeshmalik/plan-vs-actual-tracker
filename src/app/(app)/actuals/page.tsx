@@ -1,12 +1,7 @@
 /**
- * Actuals — entry form on the left, that category+month's entry on the right.
- * The form's own Category and Month controls are the selector: changing them
- * rewrites ?categoryId=&month= and the server re-reads. One control set, no
- * duplicate filter row.
- *
- * A category+month is a ledger, not a cell: the form appends, so logging three
- * ad invoices against Marketing in March is three rows that the list totals and
- * the report sums. Correcting one is removing that row and logging it again.
+ * Entry form on the left, that cell's entries on the right. The form's own
+ * Category and Month controls ARE the selector — they rewrite the query string,
+ * so there is no duplicate filter row.
  */
 import Link from "next/link";
 import { requireRepo } from "@/lib/auth";
@@ -21,14 +16,14 @@ import { ActualsList } from "./ActualsList";
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 export default async function Page({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const sp = await searchParams; // Next 16: searchParams is a Promise
+  const sp = await searchParams;
   const { from, to } = resolveRange(sp);
   const repo = await requireRepo(); // authenticate first — the cache never decides who is asking
   const uid = String(repo.uid);
 
   const categories = (await getCategories(uid)).map(c => ({ id: c._id, name: c.name }));
 
-  // Default inside the range; a month typed outside it still works, it just is not the default.
+  // Default inside the range; a month typed outside it still works.
   const wanted = one(sp.month);
   const month = isMonth(wanted) ? wanted : monthRange(from, to)[0];
   const wantedCategory = one(sp.categoryId);
@@ -48,8 +43,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
     );
   }
 
-  // A one-month range IS the lock question, so it reuses the cached read the
-  // report and the plans grid already fill rather than a second exists() query.
+  // A one-month range IS the lock question, so this reuses the cached read the
+  // report already fills rather than a second exists() query.
   const [lockedMonths, actuals, { currency }] = await Promise.all([
     getLockedMonths(uid, month, month),
     getActuals(uid, month, category.id),

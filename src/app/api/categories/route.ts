@@ -1,7 +1,4 @@
-/**
- * Categories — the canonical handler shape (auth -> parse -> repo -> respond).
- * Uniqueness is a DB index, enforced in ScopedRepo.createCategory, not here.
- */
+/** Uniqueness is a DB index, enforced in ScopedRepo.createCategory, not here. */
 import { NextResponse } from "next/server";
 import { zCategoryCreate } from "@/domain/schemas";
 import { getCategories } from "@/lib/reads";

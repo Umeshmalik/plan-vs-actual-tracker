@@ -79,8 +79,7 @@ const row = (categoryId: string, month: string, plan: number, actual: number, ha
 
 describe("chart grouping (the report's two pictures)", () => {
   it("does NOT net a month: an overspend and an equal underspend both stay visible", () => {
-    // The bug this replaced: one bar per month, netted. These two cancel to
-    // zero, so the month drew exactly like a month that landed on plan.
+    // Netted, these two cancel to zero and draw like a month that landed on plan.
     const [jan] = byMonth([row("a", "2026-01", 100, 600), row("b", "2026-01", 600, 100)], ["2026-01"]);
     expect(jan.net).toBe(0);
     expect(jan.over).toBe(toMinor(500));

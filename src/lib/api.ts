@@ -1,8 +1,4 @@
-/**
- * api.ts — THE client-side call. Every mutation goes through here so the
- * error envelope from lib/errors.ts is parsed in exactly one place and the
- * server's wording reaches the UI verbatim (one error vocabulary, end to end).
- */
+/** THE client-side call: the error envelope is parsed in exactly one place. */
 "use client";
 
 export interface ApiError {

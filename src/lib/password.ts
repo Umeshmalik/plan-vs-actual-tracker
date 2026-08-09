@@ -1,24 +1,13 @@
 /**
- * password.ts — THE password policy. One pure function, no dependencies, so the
- * sign-up form can render a live meter from exactly the rule the server will
- * enforce. (DRY, and the same instinct as locking: the UI may show it, but
- * `createUser` is what refuses.)
- *
- * The shape of the rule follows NIST 800-63B: length is what actually buys
- * entropy, so it is scored heavily, and a blocklist catches the passwords that
- * are guessed first regardless of how many character classes they contain.
- * There is deliberately no "must contain one uppercase and one symbol" mandate
- * — that rule produces `Password1!` and little else.
- *
- * Sign-IN never applies this. An account created before a policy change must
- * still be able to sign in, and refusing at the sign-in form would tell an
- * attacker their guess was well-formed but wrong.
+ * THE password policy, pure so the sign-up meter renders the exact rule the
+ * server enforces. Shaped after NIST 800-63B: length scores heavily, no
+ * character-class mandate (that rule produces `Password1!`). Sign-IN never
+ * applies it — see domain/users.ts.
  */
 
-/** The score a new password must reach. 2 = "Fair". */
+/** 2 = "Fair". */
 export const MIN_SCORE = 2;
 
-/** Anything shorter cannot reach MIN_SCORE, and Zod rejects it first. */
 export const MIN_LENGTH = 8;
 
 export const STRENGTH_LABELS = ["Too weak", "Weak", "Fair", "Strong", "Very strong"] as const;
@@ -30,11 +19,7 @@ export interface Strength {
   hint?: string;
 }
 
-/**
- * The passwords that top every breach corpus, plus the ones this app invites by
- * name. Not a security control on its own — an attacker's list is millions long
- * — but it costs nothing and stops the handful a real person actually types.
- */
+/** Not a control on its own, but it stops the handful a real person types. */
 const COMMON = new Set([
   "password",
   "password1",
@@ -74,10 +59,7 @@ function isSequential(s: string): boolean {
 
 const weak = (score: 0 | 1, hint: string): Strength => ({ score, label: STRENGTH_LABELS[score], hint });
 
-/**
- * Score a candidate password. `email` is optional context: a password built out
- * of the address it protects is worth nothing, and only the caller knows it.
- */
+/** `email` is optional context: a password built out of its own address is worth nothing. */
 export function passwordStrength(password: string, email?: string): Strength {
   const pw = password ?? "";
   if (pw.length < MIN_LENGTH) return weak(0, `Use at least ${MIN_LENGTH} characters.`);
@@ -87,15 +69,14 @@ export function passwordStrength(password: string, email?: string): Strength {
   if (/^(.)\1+$/.test(pw)) return weak(0, "One repeated character is not a password.");
   if (isSequential(lower)) return weak(0, "A straight run of characters is guessed first.");
 
-  // The local part of the address, when it is long enough to be distinctive.
   const local = email?.trim().toLowerCase().split("@")[0] ?? "";
   if (local.length >= 3 && lower.includes(local))
     return weak(1, "Leave your email address out of your password.");
 
   const classes = [/[a-z]/, /[A-Z]/, /\d/, /[^a-zA-Z0-9]/].filter(re => re.test(pw)).length;
 
-  // Length first, variety as a single bonus — a long passphrase of plain words
-  // beats a short one wearing punctuation, and this scores it that way.
+  // Length first, variety as one bonus: a long passphrase beats a short one
+  // wearing punctuation.
   let score = 1;
   if (pw.length >= 12) score++;
   if (pw.length >= 16) score++;
@@ -112,6 +93,5 @@ export function passwordStrength(password: string, email?: string): Strength {
   };
 }
 
-/** The one question callers actually ask. */
 export const isStrongEnough = (password: string, email?: string) =>
   passwordStrength(password, email).score >= MIN_SCORE;

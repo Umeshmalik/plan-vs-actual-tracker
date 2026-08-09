@@ -1,10 +1,4 @@
-/**
- * Import — the two-phase CSV screen. This server component does auth, the page
- * title and the instructions card, including the user's real category names
- * (so "unknown category" is avoidable before the first upload). Every word of
- * row-level validation comes back from the server's previewCsv; the client
- * never judges a row.
- */
+/** The chrome around ImportFlow, listing the user's real category names. */
 import { requireRepo } from "@/lib/auth";
 import { getSettings } from "@/lib/reads";
 import { Badge } from "@/components/ui/badge";

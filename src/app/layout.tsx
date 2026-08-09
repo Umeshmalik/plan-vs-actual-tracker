@@ -6,9 +6,8 @@ import { cn } from "@/lib/utils";
 import { Providers } from "./providers";
 import "./globals.css";
 
-// Three type roles from frontend-plan.md §2, self-hosted by next/font so first
-// paint has no third-party hop. globals.css binds them to Tailwind's font-sans
-// / font-mono / font-display.
+// Self-hosted by next/font, so first paint has no third-party hop. globals.css
+// binds them to font-sans / font-mono / font-display.
 const archivo = Archivo({
   subsets: ["latin"],
   weight: ["400", "500", "600"],

@@ -1,7 +1,6 @@
 /**
- * Tenant isolation, proven rather than asserted. Two ScopedRepos, one database:
- * everything user A owns is invisible and untouchable to user B, and the
- * uniqueness constraints are per-user, not global.
+ * Tenant isolation: two ScopedRepos, one database. Everything A owns is
+ * invisible to B, and the uniqueness constraints are per-user, not global.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
@@ -20,8 +19,7 @@ let aActualId: string;
 beforeAll(async () => {
   mongod = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   await mongoose.connect(mongod.getUri());
-  // The "same name for another user" claim only means something if the unique
-  // index is actually built, so wait for it instead of assuming autoIndex won.
+  // The claim means nothing unless the unique index is actually built.
   await M.Category.init();
 
   a = new ScopedRepo(new Types.ObjectId());

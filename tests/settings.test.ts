@@ -1,8 +1,4 @@
-/**
- * Settings round-trip. The currency preference is only worth anything if
- * writing it and reading it back agree, and if one setting cannot clobber the
- * other — the two header controls each send their own field.
- */
+/** Settings round-trip: a write reads back, and one setting cannot clobber the other. */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import mongoose from "mongoose";

@@ -1,16 +1,13 @@
 /**
- * seed.ts — two demo accounts so a reviewer can click straight in, and see
- * tenant isolation by logging in as each. Credentials are in the README.
- *   demo@example.com  / review-me-2026   — the PDF's sample data, Jan locked
+ * Two demo accounts, so tenant isolation can be seen by logging in as each:
+ *   demo@example.com  / review-me-2026   — the sample data, Jan locked
  *   other@example.com / tenant-b-2026    — a different tenant, nothing shared
  *
- * Idempotent: re-running resets each user's plans/actuals/locks first, so
- * `npm run seed` twice does not double the actuals.
+ * Idempotent: re-running resets each user's plans/actuals/locks first.
  */
 import mongoose, { Types } from "mongoose";
 import { M } from "../src/domain/models";
 import { ScopedRepo } from "../src/domain/repo";
-// The same hash the sign-up form produces — one cost factor, in domain/users.ts.
 import { hashPassword } from "../src/domain/users";
 import { connectDb } from "../src/lib/db";
 import { toMinor } from "../src/lib/money";
@@ -38,8 +35,7 @@ async function categoryId(repo: ScopedRepo, name: string): Promise<string> {
 
 async function main() {
   // connectDb, not a second mongoose.connect: same pool settings as the app, and
-  // a named error ("MONGODB_URI is not set") instead of the driver's when the
-  // env file is missing — which is exactly how this script used to fail.
+  // a named error when MONGODB_URI is missing.
   await connectDb();
 
   // -- demo@example.com — the assignment's sample table ----------------------
@@ -53,9 +49,7 @@ async function main() {
   await demo.upsertPlan(mkt, "2026-02", toMinor(5000));
   await demo.upsertPlan(pay, "2026-02", toMinor(20000));
 
-  // Marketing January is TWO entries that sum to the PDF's 4,800 — a category
-  // holds a month of spend, not one figure, and the sample data says so on the
-  // screen a reviewer opens first.
+  // TWO entries summing to 4,800: a cell holds a month of spend, not one figure.
   await demo.createActual({
     categoryId: mkt,
     month: "2026-01",
@@ -71,7 +65,7 @@ async function main() {
   await demo.createActual({ categoryId: pay, month: "2026-01", amountMinor: toMinor(20500) });
   await demo.createActual({ categoryId: pay, month: "2026-02", amountMinor: toMinor(19800) });
   // Marketing Feb has no actual on purpose (missing actual = 0, -5,000 / -100%).
-  // Unbudgeted spend demo (hasPlan:false in the report):
+  // Tools has no plan: unbudgeted spend, hasPlan:false in the report.
   await demo.createActual({
     categoryId: tools,
     month: "2026-01",
@@ -79,7 +73,7 @@ async function main() {
     note: "Figma seats",
   });
 
-  await demo.lock("2026-01"); // demo the closed period
+  await demo.lock("2026-01");
 
   // -- other@example.com — a second tenant, entirely separate data -----------
   const other = await resetUser("other@example.com", "tenant-b-2026");
@@ -94,8 +88,7 @@ async function main() {
     note: "Two retainers",
   });
   await other.createActual({ categoryId: contractors, month: "2026-02", amountMinor: toMinor(7900) });
-  // No lock here: January is closed for demo@ and open for other@ — same month,
-  // different tenant, different answer.
+  // No lock: January is closed for demo@ and open for other@.
 
   console.log("Seeded demo@example.com / review-me-2026 and other@example.com / tenant-b-2026");
   await mongoose.disconnect();

@@ -1,11 +1,10 @@
 /**
- * Health — App Runner's health check and the deploy smoke test. Unauthenticated
- * by design, and it actually opens the DB connection rather than reporting on a
- * connection nobody made yet: a green check has to mean the DB is reachable.
+ * The health check and deploy smoke test. Unauthenticated, and it OPENS the
+ * connection rather than reporting on one nobody made.
  */
 import { NextResponse } from "next/server";
 import { connectDb } from "@/lib/db";
-import { withPublicRoute } from "@/lib/route"; // same log line, no auth
+import { withPublicRoute } from "@/lib/route";
 
 export const dynamic = "force-dynamic"; // a cached health check is a lie
 
@@ -18,9 +17,7 @@ export const GET = withPublicRoute(async () => {
     // stays "down" — the status code below is the alarm, not a 500
   }
   const ok = db === "up";
-  // GIT_SHA is what the CI deploy job sets. The Vercel Git integration builds
-  // without it, but Vercel supplies the commit itself — so the health check can
-  // still answer "which build is this?" instead of a permanent "dev".
+  // GIT_SHA is set by the CI deploy job; Vercel builds supply the commit instead.
   const version = process.env.GIT_SHA ?? process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "dev";
   return NextResponse.json({ ok, db, version }, { status: ok ? 200 : 503 });
 });

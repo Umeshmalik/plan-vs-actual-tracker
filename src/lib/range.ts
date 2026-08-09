@@ -1,7 +1,4 @@
-/**
- * range.ts — THE report range. Every screen reads it from the same two search
- * params, with the same fallback, so the header picker drives all four tabs.
- */
+/** THE report range: one fallback, so the header picker drives all four tabs. */
 import { isMonth } from "./month";
 
 /** Matches scripts/seed.ts and design/prototype.html. */

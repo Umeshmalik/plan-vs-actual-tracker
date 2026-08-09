@@ -1,7 +1,6 @@
 /**
- * errors.ts — the ONE error vocabulary, end to end. (DRY)
- * Every API error is an AppError; every response envelope is built here.
- * The frontend renders `message` verbatim — one wording, one source.
+ * The ONE error vocabulary. The frontend renders `message` verbatim, so the
+ * wording here IS the user-facing string.
  */
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
@@ -54,7 +53,7 @@ export function toResponse(err: unknown): NextResponse {
       { status: 422 }
     );
   }
-  console.error(err); // structured logger (pino) in real impl
+  console.error(err);
   return NextResponse.json(
     {
       error: {

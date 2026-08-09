@@ -1,7 +1,6 @@
 /**
- * month.ts — THE only month logic. (DRY)
- * Months are "YYYY-MM" strings: lexicographic order == chronological order,
- * so range queries are plain $gte/$lte with zero timezone handling.
+ * THE only month logic. Months are "YYYY-MM" strings, so lexicographic order is
+ * chronological and range queries are plain $gte/$lte with no timezones.
  */
 
 const RE = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -21,7 +20,7 @@ export function compareMonths(a: string, b: string): number {
 
 const NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-/** "2026-01" -> "Jan 2026". THE month label, no Date/timezone involved. */
+/** "2026-01" -> "Jan 2026", with no Date involved. */
 export function formatMonthLabel(month: string): string {
   assertMonth(month);
   const [y, m] = month.split("-");

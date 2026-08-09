@@ -1,15 +1,8 @@
 "use client";
 
 /**
- * MonthRangePicker — THE range control. Lives in the app header and drives
- * every tab through ?from=&to=.
- *
- * It is a real calendar (react-day-picker in range mode, two months visible),
- * not a pair of text boxes: you drag across the period you want. The ledger
- * works in whole months, so whichever days you touch are snapped outward to
- * month boundaries before they become the `YYYY-MM` keys lib/month.ts owns —
- * the highlight always covers entire months, which is what actually gets
- * reported on.
+ * THE range control: drives every tab through ?from=&to=. Whichever days are
+ * touched snap outward to month boundaries before becoming YYYY-MM keys.
  */
 import { useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -69,12 +62,8 @@ export function MonthRangePicker({ fiscalYearStartMonth }: { fiscalYearStartMont
 
   const selected = draft ?? { from: startOfMonth(toDate(from)), to: endOfMonth(toDate(to)) };
 
-  /**
-   * Where the fiscal year starts is a saved preference, not a URL parameter:
-   * it describes the business, not this particular look at the report. Saving
-   * it re-renders the server tree, so the header's label and the FY buttons
-   * below both follow in one hop.
-   */
+  // A saved preference, not a URL param: it describes the business, not this
+  // particular look at the report.
   const saveFiscalStart = useApiMutation<{ fiscalYearStartMonth: number }, { fiscalYearStartMonth: number }>({
     url: "/api/settings",
     method: "PUT",

@@ -1,18 +1,7 @@
 /**
- * CategoryVarianceChart — the ranked half of the report's picture.
- *
- * The table below lists every category x month cell in alphabetical order,
- * which is the one order that hides the answer to "where did the money go
- * wrong": you have to read every row to find the biggest miss. This rolls the
- * range up to one line per category and sorts by |variance|, so the worst line
- * is the first line.
- *
- * The mark is the table's own VarianceBar on a shared zero axis, so the two
- * read as one chart at two granularities and there is no second bar geometry
- * to keep in agreement with the first.
- *
- * The rollup itself is `byCategory` in lib/variance.ts — pure and unit-tested
- * beside the rest of the variance math. This file only draws it.
+ * The ranked half of the report's picture: the range rolled up to one line per
+ * category, worst miss first — the alphabetical table below cannot show that.
+ * The mark is the table's own VarianceBar, so there is no second bar geometry.
  */
 import { Fragment } from "react";
 import Link from "next/link";
@@ -22,13 +11,9 @@ import { type CurrencyCode } from "@/lib/currency";
 import { formatMoney } from "@/lib/money";
 import { byCategory, type CategoryVariance, type VarianceRow } from "@/lib/variance";
 
-/** Past this the ranking stops being a glance — and the table is the full list. */
 const TOP = 8;
 
-/**
- * The bar's accessible name. It can be reached out of context by keyboard, so
- * it names the category rather than relying on the row it sits in.
- */
+/** The bar is keyboard-reachable out of context, so its name carries the category. */
 const words = (c: CategoryVariance, currency: CurrencyCode) =>
   !c.hasActuals
     ? `${c.categoryName}: no actuals recorded`
@@ -52,20 +37,18 @@ export function CategoryVarianceChart({
 
   const shown = all.slice(0, TOP);
   const hidden = all.length - shown.length;
-  // shown[0] holds the largest |variance| in the range, so this is the same
-  // scale the full list would give — truncating the tail cannot rescale a bar.
+  // shown[0] is the largest |variance|, so truncating the tail cannot rescale a bar.
   const max = Math.max(...shown.map(c => Math.abs(c.variance)));
 
   return (
-    // One grid, rows spliced in as fragments rather than wrapper elements, so
-    // the three columns line up across every row without `display:contents`
-    // dropping list items out of the accessibility tree.
+    // Fragments, not wrapper elements, so the columns line up without
+    // `display:contents` dropping rows out of the accessibility tree.
     <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1.5">
       {shown.map(c => (
         <Fragment key={c.categoryId}>
           <Link
-            // No single month to open here — the range rides along and the
-            // Actuals screen lands on its first month for this category.
+            // No single month here: the range rides along and Actuals lands on
+            // its first month for this category.
             href={`/actuals?categoryId=${c.categoryId}&from=${from}&to=${to}`}
             className="block truncate underline-offset-4 hover:underline focus-visible:underline"
           >

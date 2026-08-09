@@ -1,7 +1,4 @@
-/**
- * Period locks — read the locked months in a range, or lock one.
- * Locking is idempotent (upsert), so a double-click is not an error.
- */
+/** Locking is idempotent (upsert), so a double-click is not an error. */
 import { NextResponse } from "next/server";
 import { zLockCreate } from "@/domain/schemas";
 import { resolveRange } from "@/lib/range";
@@ -11,7 +8,6 @@ import { withRoute } from "@/lib/route";
 export const dynamic = "force-dynamic"; // the response; the data is cached in lib/reads.ts
 
 export const GET = withRoute(async (req, repo) => {
-  // Same range resolution as every screen: valid from/to, else DEFAULT_RANGE.
   const { from, to } = resolveRange(Object.fromEntries(req.nextUrl.searchParams));
   return NextResponse.json({ lockedMonths: await getLockedMonths(String(repo.uid), from, to) });
 });

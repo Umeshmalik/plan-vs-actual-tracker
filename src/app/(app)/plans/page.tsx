@@ -1,9 +1,4 @@
-/**
- * Plans — the editable target grid (category rows × month columns).
- * Server component: reads through the domain layer, hands plain JSON to the
- * client grid. Mutations go back over REST so the error envelope stays the
- * one contract — including the PERIOD_LOCKED 409 the API, not the UI, enforces.
- */
+/** Reads through the domain layer; the grid's mutations go back over REST. */
 import { requireRepo } from "@/lib/auth";
 import { monthRange } from "@/lib/month";
 import { resolveRange, type SearchParams } from "@/lib/range";
@@ -11,7 +6,7 @@ import { getCategories, getLockedMonths, getPlans } from "@/lib/reads";
 import { PlansGrid } from "./PlansGrid";
 
 export default async function Page({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const sp = await searchParams; // Next 16: searchParams is a Promise
+  const sp = await searchParams;
   const { from, to } = resolveRange(sp);
   const repo = await requireRepo(); // authenticate first — the cache never decides who is asking
   const uid = String(repo.uid);

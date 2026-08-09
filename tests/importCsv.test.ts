@@ -21,8 +21,7 @@ beforeAll(async () => {
   mongod = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   // monitorCommands is what lets the last test below count round trips.
   await mongoose.connect(mongod.getUri(), { monitorCommands: true });
-  // The read index is what keeps listActuals' {month, createdAt} sort out of a
-  // blocking SORT stage; wait for the build rather than racing the first write.
+  // Wait for the index build rather than racing the first write.
   await M.Actual.init();
   repo = new ScopedRepo(new Types.ObjectId());
   await repo.createCategory("Marketing");
@@ -67,8 +66,7 @@ describe("previewCsv reports every problem and writes nothing", () => {
       csv("2026-02,Marketing,100", "2026-02,Payroll,200", "2026-02,marketing,300")
     );
     expect(results.map(r => r.ok)).toEqual([true, true, true]);
-    // The third line resolves to the SAME category as the first: normalizeName
-    // is what makes "marketing" and "Marketing" one category rather than two.
+    // The third line resolves to the SAME category as the first, via normalizeName.
     expect(results[0].parsed!.categoryId).toBe(results[2].parsed!.categoryId);
   });
 
@@ -126,13 +124,8 @@ describe("commitCsv is all-or-nothing", () => {
     expect(await countActuals()).toBe(before + 3);
   });
 
-  /**
-   * Rows append, so the failure to stop is a nervous re-upload writing every
-   * line a second time and the report quietly doubling the month. The batch id
-   * is a hash of the file rather than a fresh uuid per run, and the commit
-   * clears that batch before it writes — so the same file is the same import
-   * however many times it is sent.
-   */
+  // Rows append, so a re-upload would otherwise double the month. The batch id
+  // is a hash of the FILE, and commit clears that batch before it writes.
   it("re-importing the same file replaces what it wrote instead of doubling it", async () => {
     const file = csv("2026-04,Marketing,111", "2026-04,Payroll,222");
     const first = await commitCsv(repo, file);
@@ -147,11 +140,8 @@ describe("commitCsv is all-or-nothing", () => {
     expect(cell.map(a => a.amountMinor).sort((x, y) => x - y)).toEqual([11100, 22200]);
   });
 
-  /**
-   * The other half of that rule, and the reason it is scoped to a batch rather
-   * than to a cell: a DIFFERENT file naming the same category and month is more
-   * spend in that month, not a correction of what is already there.
-   */
+  // Scoped to a batch, not a cell: a DIFFERENT file naming the same cell is more
+  // spend, not a correction.
   it("a different file adds to the same cell rather than overwriting it", async () => {
     await commitCsv(repo, csv("2026-05,Marketing,100"));
     await commitCsv(repo, csv("2026-05,Marketing,250"));
@@ -161,15 +151,9 @@ describe("commitCsv is all-or-nothing", () => {
 });
 
 /**
- * The import used to ask the database two questions per row — "does this
- * category exist?" and "is this month locked?" — whose answers cannot change
- * mid-file. At the 1 MB body limit that is ~40,000 round trips to learn two
- * things. Both are read once up front now, and the commit is a single
- * insertMany rather than an await per row.
- *
- * Counting round trips rather than timing them: a wall-clock assertion would be
- * flaky, and the thing that actually regresses is a query moving back inside
- * the loop, which shows up here immediately and at any file size.
+ * Both lookups are read once per FILE and the commit is one insertMany. Counted
+ * rather than timed: what regresses is a query moving back inside the row loop,
+ * which shows up here at any file size.
  */
 describe("import cost does not scale with file size", () => {
   const countRoundTrips = async (commands: string[], run: () => Promise<unknown>) => {
@@ -185,10 +169,8 @@ describe("import cost does not scale with file size", () => {
     return n;
   };
 
-  // The rows walk months rather than repeating one, so this measures a wide
-  // file rather than one deep cell — both are legal now, and a per-month spread
-  // is what the report's range query has to survive. Started well past the
-  // months the tests above use so nothing collides.
+  // Rows walk months rather than repeating one, so this measures a wide file.
+  // Started past the months above so nothing collides.
   const rows = (n: number) =>
     csv(
       ...Array.from(

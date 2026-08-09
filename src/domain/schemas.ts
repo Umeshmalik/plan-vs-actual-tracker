@@ -1,7 +1,4 @@
-/**
- * schemas.ts — single source for validation AND types. (DRY)
- * Zod schema -> z.infer gives the TS type; no separate interface drift.
- */
+/** Single source for validation AND types — z.infer, never a parallel interface. */
 import { z } from "zod";
 import { isMonth } from "../lib/month";
 
@@ -9,23 +6,12 @@ export const zMonth = z.string().refine(isMonth, {
   error: "Month must be YYYY-MM (e.g. 2026-01)",
 });
 
-/**
- * Money enters the API as major units (string or number), stored as minor.
- * Zod 4 rejects NaN and Infinity as part of the number type itself, so the
- * wording that used to hang off `.finite()` (a no-op since v4) now sits on the
- * type check where those inputs actually land.
- */
+/** Money enters as MAJOR units and is stored as minor. Zod 4 rejects NaN/Infinity by type. */
 export const zAmountMajor = z.coerce
   .number({ error: "Amount must be a number" })
   .nonnegative("Amount must be 0 or more");
 
-/**
- * Spend, as opposed to a target: a plan of 0 is a real statement ("budget
- * nothing"), an actual of 0 is a row nobody needed to type. The wording is here
- * rather than repeated at each call site, because it is what the CSV import
- * prints against the offending line — `nonnegative` above fires first on a
- * negative, so both messages have to read correctly on their own.
- */
+/** A plan of 0 is a real statement; an actual of 0 is a row nobody needed to type. */
 export const zAmountPositive = zAmountMajor.refine(v => v > 0, "Amount must be greater than 0");
 
 export const zCategoryCreate = z.object({

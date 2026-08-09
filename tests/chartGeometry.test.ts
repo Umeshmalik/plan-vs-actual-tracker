@@ -1,11 +1,7 @@
 /**
- * The monthly chart's segment geometry.
- *
- * This exists because the bug it pins shipped once and did not look like a
- * drawing bug: recharts hands a below-axis segment a NEGATIVE height with `y`
- * at its bottom edge, the naive inset collapsed it to the 1px floor, and every
- * under-plan segment drew as a hairline parked at the far end of its block.
- * On screen that reads as bad data, not bad arithmetic — so it gets a test.
+ * Recharts hands a below-axis segment a NEGATIVE height with `y` at its bottom
+ * edge; the naive inset collapsed it to the 1px floor, which reads on screen as
+ * bad data rather than bad arithmetic.
  */
 import { describe, it, expect } from "vitest";
 import { segmentRect } from "../src/components/MonthlyVarianceChart";

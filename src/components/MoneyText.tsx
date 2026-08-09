@@ -1,14 +1,7 @@
 /**
- * MoneyText — THE money renderer. Minor units in, accounting display out.
- * No screen calls formatMoney itself; every figure in the app goes through here
- * so grouping, cents and parenthesised negatives can only be defined once.
- *
- * It is a primitive: mono, tabular, non-wrapping, and deliberately colourless —
- * the caller decides whether a figure is `text-ledger`, `text-acct` or plain ink.
- *
- * `currency` is required rather than defaulted. It is a per-user preference, so
- * a call site that forgets it would print one tenant's figures in another's
- * symbol — the kind of miss worth spending a compiler error on.
+ * THE money renderer: minor units in, accounting display out. Deliberately
+ * colourless — the caller picks the tone. `currency` is required rather than
+ * defaulted, so a forgetful call site cannot print another tenant's symbol.
  */
 import { type CurrencyCode } from "@/lib/currency";
 import { formatMoney } from "@/lib/money";

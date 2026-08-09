@@ -1,16 +1,14 @@
 /**
- * The canonical handler shape (auth -> parse -> guard -> repo -> respond).
- * Every route in the app is this same composition — no business logic here,
- * and no try/catch or logging by hand: withRoute supplies the ScopedRepo,
- * the error envelope and the one structured log line per request.
+ * The canonical handler shape: parse -> guard -> repo -> respond. withRoute
+ * supplies auth, the error envelope and the log line, so there is no try/catch.
  */
 import { NextResponse } from "next/server";
 import { zPlanUpsert } from "@/domain/schemas";
 import { assertPeriodUnlocked } from "@/domain/locking";
 import { toMinor } from "@/lib/money";
-import { withRoute } from "@/lib/route"; // session -> ScopedRepo (401s on its own)
+import { withRoute } from "@/lib/route";
 
-/** DELETE takes the same cell key as PUT, minus the amount. (DRY) */
+/** The same cell key as PUT, minus the amount. */
 const zPlanDelete = zPlanUpsert.pick({ categoryId: true, month: true });
 
 export const PUT = withRoute(async (req, repo) => {

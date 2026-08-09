@@ -1,22 +1,12 @@
 "use client";
 
 /**
- * ImportFlow — preview then commit. The server's RowResult[] is the single
- * source of truth for row status and wording: this component decides nothing
- * about a row, it only renders what previewCsv said. Preview writes nothing;
- * commit is all-or-nothing, so the button stays disabled while any row errors
- * and sits behind an AlertDialog because one click writes every row.
+ * Preview then commit. The server's RowResult[] is the single source of truth
+ * for row status and wording — this component judges nothing.
  *
- * Two useApiMutation calls, not one, so "checking rows" and "importing" are
- * separate pending states: a preview in flight swaps the table for a skeleton,
- * a commit in flight leaves the table on screen. The mutations also hold the
- * only copy of the preview — `preview.data.results` and `preview.variables.csv`
- * are the results and the exact text they were taken from, so there is no
- * second copy in useState to keep in sync.
- *
- * Toasts confirm; the Banner persists. A toast fades, but a rejected commit's
- * detail has to stay on screen, so both are rendered — never one instead of
- * the other. Server messages are shown verbatim in both.
+ * Two mutations, not one, so "checking" and "importing" are separate pending
+ * states. They also hold the ONLY copy of the preview (`preview.data.results`
+ * and `preview.variables.csv`), so there is no useState copy to keep in sync.
  */
 import { useRef, useState } from "react";
 import Link from "next/link";
@@ -57,7 +47,6 @@ const needFixing = (n: number) => `${n} row${n === 1 ? " needs" : "s need"} fixi
 /** The domain writes "2026-01 is locked. …" — pull the month out for the chip. */
 const lockedMonth = (r: RowResult) => r.error?.match(/^(\d{4}-\d{2}) is locked/)?.[1];
 
-/** A 1 MB export is ~20k rows; the preview body scrolls instead of laying them all out. */
 const PREVIEW_BODY_HEIGHT = 480;
 /** Long enough that a paste-and-keep-typing run costs one request, not ten. */
 const AUTO_PREVIEW_WAIT = 800;
@@ -72,8 +61,7 @@ export function ImportFlow({ currency }: { currency: CurrencyCode }) {
   const [ok, setOk] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
 
-  // Preview writes nothing, so there is no server tree to refresh, and the
-  // summary line plus the toast below already report the outcome.
+  // Preview writes nothing, so there is no server tree to refresh.
   const preview = useApiMutation<{ results: RowResult[] }, Csv>({
     url: "/api/imports/preview",
     success: null,
@@ -86,16 +74,13 @@ export function ImportFlow({ currency }: { currency: CurrencyCode }) {
     },
   });
 
-  // `success` stays null because this toast carries an action, which the hook's
-  // string form cannot express — the wording is identical, fired here instead.
+  // success: null because this toast carries an action the hook's string form
+  // cannot express; it is fired below instead.
   const commit = useApiMutation<{ committed: number }, Csv>({
     url: "/api/imports/commit",
     success: null,
     onDone: data => {
       const message = `${plural(data.committed, "row")} imported`;
-      // The banner says where they landed; the toast stays short. An import
-      // writes spend, so nothing shows up on Plans — that is the one thing
-      // worth stating outright.
       setOk(
         `${message} as actuals, replacing any figure those cells already held. They show on Report and Actuals; Plans holds targets only.`
       );
@@ -108,19 +93,17 @@ export function ImportFlow({ currency }: { currency: CurrencyCode }) {
   });
 
   const busy = preview.isPending || commit.isPending;
-  // A rejected commit carries a fresh preview (a month may have been locked
-  // since ours) — render the server's newer verdict over the one we hold.
+  // A rejected commit carries a fresher preview — prefer the server's verdict.
   const rejected = commit.envelope?.details?.results as RowResult[] | undefined;
   const results = rejected ?? preview.data?.results ?? [];
   const errorCount = results.filter(r => !r.ok).length;
   const okCount = results.length - errorCount;
-  // The table only stands for the text it was taken from; edit the box or drop
-  // a new file and it goes away until the next preview.
+  // The table only stands for the text it was taken from.
   const previewedCsv = preview.variables?.csv ?? "";
   const showPreview = preview.data != null && csv === previewedCsv;
 
   // Errored rows come back without `parsed`, so month/category echo the user's
-  // own text from the CSV the preview was taken from (display, not validation).
+  // own text from the previewed CSV (display, not validation).
   const bodyLines = previewedCsv.trim().split(/\r?\n/).slice(1);
   const cell = (line: number, i: number) => bodyLines[line - 1]?.split(",")[i]?.trim() || DASH;
 
@@ -130,11 +113,7 @@ export function ImportFlow({ currency }: { currency: CurrencyCode }) {
     preview.mutate({ csv: text });
   }
 
-  /**
-   * Paste and the preview follows on its own. Every guard is read when the
-   * timer fires, not when the key was pressed: nothing empty, nothing while a
-   * commit is writing, and nothing for text the server has already judged.
-   */
+  // Guards are read when the timer FIRES, not when the key was pressed.
   const autoPreview = useDebouncedCallback(
     (text: string) => {
       if (!text.trim() || commit.isPending || text === preview.variables?.csv) return;
@@ -230,8 +209,7 @@ export function ImportFlow({ currency }: { currency: CurrencyCode }) {
         </CardHeader>
 
         <CardContent className="flex flex-col gap-4">
-          {/* The drop zone IS the label: the real file input lives inside it,
-              sr-only so it stays focusable and Enter opens the picker. */}
+          {/* The drop zone IS the label; the real input is sr-only inside it. */}
           <label
             onDragOver={e => {
               e.preventDefault();
@@ -252,8 +230,7 @@ export function ImportFlow({ currency }: { currency: CurrencyCode }) {
           >
             <Upload className="size-5 text-muted-foreground" aria-hidden />
             <span className="text-muted-foreground">Drop a CSV here, or</span>
-            {/* asChild + span: a real <button> inside a <label> is invalid markup
-                and would swallow the click that opens the picker. */}
+            {/* asChild + span: a <button> inside a <label> would swallow the click. */}
             <Button asChild variant="outline" size="sm">
               <span>Choose a CSV</span>
             </Button>
@@ -402,9 +379,6 @@ export function ImportFlow({ currency }: { currency: CurrencyCode }) {
           </CardFooter>
         </Card>
       ) : csv.trim() ? null : (
-        // This stands in for the preview table, so it speaks about the preview.
-        // Repeating "Choose a CSV" here would be the same action twice on one
-        // screen — the drop zone is directly above it.
         <EmptyState
           icon={TableIcon}
           title="Nothing to preview yet"

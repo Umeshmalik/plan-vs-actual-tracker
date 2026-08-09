@@ -1,18 +1,8 @@
 "use client";
 
 /**
- * ActualsList — every entry logged against one category+month, oldest first.
- * DataTable renders it inside a Card; Remove is an icon Button behind a Tooltip
- * and an AlertDialog, because a deleted entry does not come back.
- *
- * The footer totals the rows, because that sum is what the report counts for
- * this cell and a list of five invoices does not add itself up on sight. It is
- * summed here rather than passed in: these ARE the rows, so a total computed
- * from anything else could disagree with what is on screen.
- *
- * The removal is a `useApiMutation` with a path-param url, so the row id is the
- * variable and no body is sent; pending, the toast and the refresh are the
- * hook's.
+ * Every entry logged against one category+month, oldest first. The footer sums
+ * THESE rows rather than taking a total in, so it cannot disagree with the screen.
  */
 import { Trash2 } from "lucide-react";
 import { useApiMutation } from "@/lib/useApiMutation";
@@ -135,8 +125,6 @@ export function ActualsList({
         />
       ) : (
         <Card>
-          {/* DataTable's caption is the section title, so the Card adds the
-              status line under the table instead of a second heading. */}
           <CardContent>
             <DataTable
               caption={caption}

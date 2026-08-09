@@ -25,9 +25,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = await currentUser();
   if (!user) redirect("/login");
 
-  // The wordmark used to print a hard-coded "fy 2026". It now names the fiscal
-  // year the user's own start month puts us in, which is also the one the range
-  // picker's FY buttons are anchored on.
   const { fiscalYearStartMonth, currency } = await getSettings(user.id);
   const currentFy = fiscalYearLabel(
     fiscalYearOf(DEFAULT_RANGE.from, fiscalYearStartMonth),
@@ -41,12 +38,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen">
-      {/* One sticky block, not two. The tabs have to pin under the header, and
-          giving them their own `sticky top-[64px]` would hard-code the header's
-          height into a second file — a number that goes wrong the first time the
-          wordmark wraps on a narrow screen. Sticking the pair together means the
-          browser does that arithmetic. The background and blur live here for the
-          same reason: one surface scrolling under one edge. */}
+      {/* One sticky block, not two: giving the tabs their own `top-[64px]` would
+          hard-code the header's height, which is wrong the moment it wraps. */}
       <div className="sticky top-0 z-20 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80">
         <header className="flex items-center gap-4 border-b px-6 py-3 max-sm:px-3">
           <Link href="/report" className="leading-tight">

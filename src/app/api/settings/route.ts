@@ -1,9 +1,4 @@
-/**
- * The signed-in user's own reporting preferences — today just where their
- * fiscal year starts. The canonical handler shape: parse, call the domain,
- * respond. withRoute supplies auth, the error envelope, and the cache
- * invalidation that makes the header pick the new label up on the next render.
- */
+/** The signed-in user's own reporting preferences. */
 import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/domain/users";
 import { withRoute } from "@/lib/route";

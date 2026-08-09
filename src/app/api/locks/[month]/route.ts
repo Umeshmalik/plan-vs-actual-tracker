@@ -1,7 +1,4 @@
-/**
- * Unlock a period. Idempotent: unlocking an open month is a no-op, not a 404 —
- * the caller's intent ("this month is editable") is satisfied either way.
- */
+/** Idempotent: unlocking an open month is a no-op, not a 404. */
 import { NextResponse } from "next/server";
 import { zLockCreate } from "@/domain/schemas";
 import { withRoute } from "@/lib/route";

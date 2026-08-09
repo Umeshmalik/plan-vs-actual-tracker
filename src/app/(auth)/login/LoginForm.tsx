@@ -1,21 +1,12 @@
 "use client";
 
 /**
- * LoginForm — the server action stays the submit path, because Auth.js sets the
- * session cookie and issues the redirect on the server; a client fetch cannot.
- * TanStack Form sits in front of it and owns field state and client validation,
- * so a mistyped address is caught before the round-trip instead of after it.
+ * The server action stays the submit path — Auth.js sets the cookie and issues
+ * the redirect server-side. TanStack Form sits in front for field state, gating
+ * on React's rule that a default-prevented submit skips the form action.
  *
- * The gate works because React skips a form action when the submit event was
- * default-prevented, so an invalid form never reaches the server, and a valid
- * one submits natively — `useActionState` and `useFormStatus` keep working
- * exactly as they did. The wording matches the server's own credentials schema
- * so the client never invents an error the server would not have given.
- *
- * Sign-up is the same form: identical fields, identical rules (domain/users.ts
- * validates both), so it is one `mode` prop rather than a second component that
- * would drift. Only the labels, the autocomplete hint and the seeded address
- * differ.
+ * Sign-up is the same form behind a `mode` prop, since domain/users.ts validates
+ * both with the same rules.
  */
 import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
@@ -34,11 +25,7 @@ const validEmail = ({ value }: { value: string }) =>
 const longEnough = ({ value }: { value: string }) =>
   value.length >= MIN_LENGTH ? undefined : `Password must be at least ${MIN_LENGTH} characters`;
 
-/**
- * Four segments, filled to the score. It calls the SAME function `createUser`
- * validates with, so the meter cannot promise something the server then
- * refuses, and colour is never the only signal — the label says it too.
- */
+/** Calls the same function createUser validates with, so it cannot over-promise. */
 function StrengthMeter({ password, email }: { password: string; email: string }) {
   const { score, label, hint } = passwordStrength(password, email);
   const ok = score >= MIN_SCORE;
@@ -104,8 +91,6 @@ export function LoginForm({
   const isSignup = mode === "signup";
   const [reveal, setReveal] = useState(false);
   const [error, formAction] = useActionState(action, null);
-  // onMount as well as onChange, so validity is known on the very first submit
-  // and not only after the user has typed into a field.
   // String() rather than the literal: COPY is `as const`, and a default typed
   // `"" | "demo@example.com"` would make handleChange refuse every other address.
   const form = useForm({ defaultValues: { email: String(copy.defaultEmail), password: "" } });
@@ -158,10 +143,9 @@ export function LoginForm({
 
       <form.Field
         name="password"
-        // Sign-up gates on the strength rule, sign-in only on length — an
-        // account made under an older policy must still be able to get in.
-        // onChangeListenTo re-runs the rule when the EMAIL changes too, so
-        // "alice@… / alice1234" is caught whichever field was typed last.
+        // Sign-up gates on strength, sign-in only on length. onChangeListenTo
+        // re-runs the rule when the EMAIL changes, so "alice@… / alice1234" is
+        // caught whichever field was typed last.
         validators={{
           onMount: isSignup ? ({ value }) => passwordStrength(value).hint : longEnough,
           onChangeListenTo: isSignup ? ["email"] : [],
@@ -180,8 +164,6 @@ export function LoginForm({
                 <Input
                   id="password"
                   name={field.name}
-                  // The toggle swaps the input type; the value never leaves the
-                  // field, so nothing about the submit path changes.
                   type={reveal ? "text" : "password"}
                   autoComplete={copy.autoComplete}
                   required

@@ -1,17 +1,10 @@
 "use client";
 
 /**
- * The hook half of DataTable — sorting and row virtualisation.
- *
- * It exists as its own module only because Next refuses to let a module that a
- * Server Component imports so much as *mention* `useRef`, and `/report` renders
- * DataTable from the server. Everything it draws comes from `Shell` in
- * DataTable.tsx; this file only supplies the table instance and the scroll
- * container. Do not import it directly — `DataTable` picks it when a column is
- * `sortable` or `virtual` is on.
- *
- * Consequence worth knowing: those two props need a client-component caller.
- * A Server Component cannot pass `Column.render` across the client boundary.
+ * The hook half of DataTable. Separate module only because a Server Component's
+ * import graph may not mention `useRef`, and /report renders DataTable. Do not
+ * import directly — DataTable picks it for `sortable`/`virtual`, which
+ * consequently need a client-component caller.
  */
 import { useRef } from "react";
 import { useTable } from "@tanstack/react-table";

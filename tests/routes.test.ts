@@ -1,8 +1,6 @@
 /**
- * The REST layer, end to end against a real mongod: every endpoint's status
- * code, response shape and error code, the lock guard on every mutating path,
- * and the one structured log line withRoute emits per request.
- * Auth is the only thing stubbed — requireRepo hands back a fixed ScopedRepo.
+ * The REST layer end to end against a real mongod. Auth is the only stub —
+ * requireRepo hands back a fixed ScopedRepo.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
@@ -17,16 +15,14 @@ const state = vi.hoisted(() => ({
   tags: [] as string[],
 }));
 vi.mock("../src/lib/auth", () => ({ requireRepo: async () => state.repo }));
-// next/cache reaches for a request-scoped store that only exists inside a real
-// Next server, so it is stubbed here — which is also what makes every assertion
-// below read live Mongo rather than an entry an earlier test filled. The tags
-// it records are the contract lib/route.ts owns: see the invalidation test.
+// next/cache needs a request-scoped store that only exists in a real Next
+// server. Stubbing it also makes every assertion below read live Mongo.
 vi.mock("next/cache", () => ({
   cacheTag: () => {},
   cacheLife: () => {},
   revalidateTag: (tag: string) => void state.tags.push(tag),
 }));
-// Capture the request log instead of printing it — the log line is a contract here.
+// The log line is a contract here, so capture it instead of printing it.
 vi.mock("../src/lib/logger", () => ({
   log: { info: () => {} },
   logRequest: (fields: Record<string, unknown>) => void state.lines.push(fields),
@@ -59,10 +55,8 @@ const json = async (r: Response) => [r.status, await r.json()] as const;
 beforeAll(async () => {
   mongod = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   await mongoose.connect(mongod.getUri());
-  // Every unique index this file asserts — duplicate category, one plan per
-  // cell — is built in the BACKGROUND by autoIndex, so a fast first write can
-  // land before the constraint exists and the assertion fails for a reason that
-  // has nothing to do with the code. Wait for all of them rather than racing.
+  // autoIndex builds in the BACKGROUND, so a fast first write can land before
+  // the constraint exists. Wait rather than race.
   await Promise.all(Object.values(M).map(model => model.init()));
   state.repo = new ScopedRepo(new Types.ObjectId());
 });
@@ -85,11 +79,8 @@ describe("REST layer", () => {
     expect([s, b.error.code]).toEqual([422, "VALIDATION_FAILED"]);
   });
 
-  /**
-   * "Same name" is decided by repo.normalizeName, not by string equality, so a
-   * list cannot end up holding two rows that render identically. Each variant
-   * below reached the database as its own category before that existed.
-   */
+  // "Same name" is repo.normalizeName, not string equality — every variant below
+  // reached the database as its own category before that existed.
   it("categories: a name that only differs by case, spacing or unicode form is a duplicate", async () => {
     const before = (await state.repo.listCategories()).length;
     for (const name of ["marketing", " Marketing ", "MARKETING", "Marketing".normalize("NFD")]) {
@@ -97,8 +88,8 @@ describe("REST layer", () => {
       expect([s, b.error.code]).toEqual([422, "VALIDATION_FAILED"]);
       expect(b.error.message).toContain("already exists");
     }
-    // A genuinely new name with a stray double space is stored collapsed, so the
-    // next attempt at the single-spaced spelling is a duplicate too.
+    // A stray double space is stored collapsed, so the single-spaced spelling
+    // is then a duplicate too.
     const [s2, b2] = await json(await categories.POST(req("/api/categories", "POST", { name: "Ad  spend" })));
     expect([s2, b2.category.name]).toEqual([200, "Ad spend"]);
     expect((await categories.POST(req("/api/categories", "POST", { name: "ad spend" }))).status).toBe(422);
@@ -153,11 +144,6 @@ describe("REST layer", () => {
     expect([s2, b2.deleted]).toEqual([200, 1]);
   });
 
-  /**
-   * The feature: a category is spent against several times in a month, so the
-   * same category+month posted twice is two line items with their own notes and
-   * their own delete, and the report's $sum is what adds them together.
-   */
   it("actuals: posting the same category+month again appends a second entry", async () => {
     const post = (amount: number, note?: string) =>
       actuals.POST(req("/api/actuals", "POST", { categoryId: catId, month: "2026-05", amount, note }));
@@ -289,12 +275,6 @@ describe("REST layer", () => {
     await state.repo.unlock("2026-02");
   });
 
-  /**
-   * The fiscal-year start is the one preference that changes what every screen
-   * reports on, so it has to be a stored, per-user value rather than something
-   * the browser remembers — and it has to default to the calendar year for a
-   * user who never touches it.
-   */
   it("settings: defaults to the calendar year, saves a new start, rejects a bad one", async () => {
     await M.User.create({ _id: state.repo.uid, email: "settings@example.com", passwordHash: "x" });
 
@@ -343,12 +323,8 @@ describe("REST layer", () => {
     expect(String(state.lines[1].requestId)).toMatch(/^[0-9a-f-]{36}$/); // minted when none came in
   });
 
-  /**
-   * The other half of lib/reads.ts: the cache is only ever as fresh as this
-   * gate. A write that forgets to expire the tag shows the user yesterday's
-   * numbers, and a read that expires it throws the cache away on every render —
-   * so both directions are asserted, not just the happy one.
-   */
+  // Both directions: a write that forgets to expire shows stale numbers, a read
+  // that expires throws the cache away on every render.
   it("expires the tenant's cached reads on every write, and only on a write", async () => {
     const tag = `user:${state.repo.uid}`;
 

@@ -1,8 +1,4 @@
-/**
- * LockChip — THE closed-period indicator: an outline Badge in Plex Mono
- * smallcaps with a lock icon. Locked state is always chip + text, never
- * colour alone.
- */
+/** THE closed-period indicator. Locked state is always chip + text, never colour alone. */
 import { Lock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { formatMonthLabel, isMonth } from "@/lib/month";

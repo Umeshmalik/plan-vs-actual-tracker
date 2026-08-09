@@ -1,14 +1,9 @@
-/**
- * Report — hands back runReport's output as-is: rows, totals, lockedMonths.
- * Variance maths lives in lib/variance.ts, the query in domain/report.ts.
- */
 import { NextResponse } from "next/server";
 import { zReportQuery } from "@/domain/schemas";
 import { getReport } from "@/lib/reads";
 import { withRoute } from "@/lib/route";
 
-// The RESPONSE is never cached (it is one tenant's data behind a cookie, and
-// withRoute stamps no-store on it). The DATA behind it is — see lib/reads.ts.
+// The RESPONSE is never cached; the DATA behind it is — see lib/reads.ts.
 export const dynamic = "force-dynamic";
 
 export const GET = withRoute(async (req, repo) => {

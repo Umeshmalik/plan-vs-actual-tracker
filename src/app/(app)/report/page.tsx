@@ -1,16 +1,5 @@
-/**
- * Report — the hero screen. Every number on it comes from runReport(); the page
- * does no money or variance math. The only arithmetic here is presentation
- * scale: the shared bar axis (max |variance|) for the table's variance column.
- *
- * Reading order is headline -> shape -> detail: the summary tiles, then the two
- * charts, then the ledger. The charts used to sit under a table that can run to
- * hundreds of rows, which is the same as not shipping them.
- *
- * Construction is shadcn: Card for the summary and the chart panel, DataTable
- * (shadcn Table) for the ledger, Badge for row provisos, Button for the one
- * action on the empty state. Nothing here imitates a component with utilities.
- */
+// Every number comes from runReport(); the only arithmetic here is presentation
+// scale (the shared bar axis).
 import Link from "next/link";
 import { Download, Lock, Minus, Receipt, Target, TrendingDown, TrendingUp } from "lucide-react";
 import { requireRepo } from "@/lib/auth";
@@ -68,8 +57,6 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
     getReport(String(repo.uid), from, to),
     getSettings(String(repo.uid)),
   ]);
-  // Only when the range IS exactly one fiscal year — an arbitrary twelve-month
-  // selection must not be labelled as one.
   const fyLabel = labelIfFiscalYear(from, to, fiscalYearStartMonth);
 
   const title = (
@@ -82,10 +69,8 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
         </p>
       </div>
       {rows.length > 0 && (
-        // A plain link, not a fetch-then-blob: the route already answers with
-        // `content-disposition: attachment`, so the browser downloads it and no
-        // client JavaScript has to hold the file in memory. `download` keeps the
-        // filename if a browser ever ignores the header.
+        // A plain link: the route already sends content-disposition: attachment,
+        // so no client JS has to hold the file in memory.
         <Button asChild variant="outline" size="sm">
           <a href={`/api/report/export?from=${from}&to=${to}`} download>
             <Download aria-hidden />
@@ -114,30 +99,15 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
   }
 
   const locked = new Set(lockedMonths);
-  // Presentation scale: one shared zero axis for every bar in the column.
+  /** One shared zero axis for every bar in the column. */
   const maxVar = Math.max(...rows.map(r => Math.abs(r.variance)));
-  // Months come from the range, not from the rows, so a month nobody touched
-  // still gets its slot on the axis. The page hands the chart the rows and
-  // does no aggregation of its own: netting a month is exactly what used to
-  // let an overspend and an underspend cancel each other out of the picture.
+  // From the range, not the rows, so an untouched month keeps its slot.
   const months = monthRange(from, to);
-  // A one-month range is already its own picture — the ranked chart shows the
-  // same categories, and a single stacked bar would only restate the Variance
-  // tile three inches above it.
   const showMonthly = from !== to;
 
   const VarianceIcon = totals.variance < 0 ? TrendingDown : totals.variance > 0 ? TrendingUp : Minus;
 
-  /**
-   * Drill-down. The Actuals screen already IS the detail view for one
-   * category x month — it reads `?categoryId=&month=` and shows that cell's
-   * entry, its note and its provenance beside the form that edits it. So the
-   * feature is a link to it, not a second screen that would have to be kept in
-   * agreement with the first.
-   *
-   * `from`/`to` ride along so the header's range survives the trip and the
-   * back button lands on the same report.
-   */
+  /** The Actuals screen IS the detail view for one cell; from/to ride along so the range survives. */
   const drillDown = (r: VarianceRow) =>
     `/actuals?categoryId=${r.categoryId}&month=${r.month}&from=${from}&to=${to}`;
 
@@ -149,8 +119,6 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
         <Link
           href={drillDown(r)}
           className="underline-offset-4 hover:underline focus-visible:underline"
-          // The row already says the month; a screen reader arriving at the
-          // link out of context should hear which cell it opens.
           aria-label={`${r.categoryName}, ${formatMonthLabel(r.month)} — open the entries behind this row`}
         >
           {r.categoryName}
@@ -171,10 +139,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
       key: "plan",
       header: "Plan",
       numeric: true,
-      // showZero=false is exactly the "—" the prototype prints for no target.
-      // The badge sits BEFORE the figure so the figure keeps the cell's right
-      // edge: trailing it pushed the numeral left on exactly the rows that have
-      // one, and a ledger column whose numerals do not share an edge is unreadable.
+      // Badge BEFORE the figure so every numeral keeps the cell's right edge.
       render: r => (
         <span className="inline-flex items-center justify-end gap-2">
           {!r.hasPlan && (
@@ -206,10 +171,8 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
       header: "Variance",
       numeric: true,
       width: "280px",
-      // A grid, not `flex justify-end`: right-justifying the pair let the width
-      // of the numeral push the bar sideways, so every row's zero axis landed
-      // somewhere else and the column stopped being a tornado chart. Fixed
-      // first column = one shared axis; the numeral right-aligns in the rest.
+      // A grid, not flex justify-end: a numeral's width would otherwise push the
+      // bar sideways and every row's zero axis would land somewhere else.
       render: r => (
         <span className="grid grid-cols-[auto_1fr] items-center gap-2.5">
           <VarianceBar variance={r.variance} max={maxVar} hasActuals={r.hasActuals} currency={currency} />
@@ -261,8 +224,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
         </SummaryCard>
       </div>
 
-      {/* items-start: a short category list must not be stretched into a tall
-          card of white space just because the chart beside it is taller. */}
+      {/* items-start: a short category list must not stretch to the taller chart. */}
       <div className={cn("mb-5 grid items-start gap-3", showMonthly && "xl:grid-cols-2")}>
         <Card>
           <CardHeader>
@@ -299,7 +261,6 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
         columns={columns}
         rows={rows}
         rowKey={r => `${r.categoryId}-${r.month}`}
-        // hover: pinned too, so a closed period keeps its tint under the cursor
         rowClassName={r => (locked.has(r.month) ? "bg-bar-locked hover:bg-bar-locked" : undefined)}
         footer={
           <TableRow>

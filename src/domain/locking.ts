@@ -1,7 +1,6 @@
 /**
- * locking.ts — THE lock guard. One function, called from every mutating path:
- * plan upsert/delete, actual create/delete, CSV commit (per distinct month).
- * The UI also disables controls, but THIS is the enforcement point.
+ * THE lock guard, called from every mutating path: plan upsert/delete, actual
+ * create/delete, CSV commit. The UI disables controls; THIS enforces.
  */
 import { AppError } from "../lib/errors";
 import type { ScopedRepo } from "./repo";

@@ -1,11 +1,7 @@
 /**
- * The report as a downloadable CSV. A separate path rather than a `?format=csv`
- * branch on /api/report, so that route's JSON contract stays exactly what the
- * README documents and this one is free to own a different content type.
- *
- * It reads through the same cached `getReport`, so exporting the range you are
- * looking at costs zero extra Mongo round-trips — and cannot disagree with the
- * table, because it is the same rows.
+ * The report as a downloadable CSV — a separate path, so /api/report's JSON
+ * contract is untouched. Reads the same cached getReport, so it cannot disagree
+ * with the table on screen.
  */
 import { NextResponse } from "next/server";
 import { zReportQuery } from "@/domain/schemas";
@@ -24,12 +20,9 @@ export const GET = withRoute(async (req, repo) => {
 
   return new NextResponse(reportCsv(report, currency), {
     headers: {
-      // charset matters: category names are free text, and Excel reads a
-      // headerless byte stream as the local codepage.
+      // charset matters: names are free text, and Excel would otherwise read the
+      // bytes as the local codepage.
       "content-type": "text/csv; charset=utf-8",
-      // `attachment` is what makes the browser download instead of rendering,
-      // and the range in the filename is what stops a downloads folder filling
-      // with report.csv, report(1).csv, report(2).csv.
       "content-disposition": `attachment; filename="plan-vs-actual-${from}-to-${to}.csv"`,
     },
   });

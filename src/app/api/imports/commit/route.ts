@@ -1,7 +1,6 @@
 /**
- * Import phase 2 — all-or-nothing. commitCsv re-validates and writes inside a
- * transaction; one bad row means nothing is written and the whole preview comes
- * back in the error envelope so the UI can flag the exact lines.
+ * Phase 2 — all-or-nothing. One bad row means nothing is written, and the whole
+ * preview comes back in the error envelope so the UI can flag the exact lines.
  */
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -14,19 +13,13 @@ const zImportBody = z.object({
   csv: z.string().trim().min(1, "Add a CSV file or paste rows before importing."),
 });
 
-/**
- * The one slow route: a 1 MB CSV is ~20k inserts inside a transaction, and on
- * Vercel a function defaults to a far shorter budget than that can need over a
- * network hop to Atlas. Every other route answers in milliseconds and keeps the
- * default. (Ignored outside Vercel — the container has no such limit.)
- */
+/** The one slow route: ~20k inserts in a transaction outruns Vercel's default budget. */
 export const maxDuration = 60;
 
 export const POST = withRoute(async (req, repo) => {
   const { csv } = zImportBody.parse(await req.json());
   const preview = await previewCsv(repo, csv);
-  // Re-check the batch's distinct months at the write boundary: the user's
-  // preview may be minutes old, and the lock is THE server-side rule.
+  // Re-check at the write boundary: the preview may be minutes old.
   await assertMonthsUnlocked(
     repo,
     preview.flatMap(r => r.parsed?.month ?? [])

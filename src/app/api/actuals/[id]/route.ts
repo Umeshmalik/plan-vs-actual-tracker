@@ -1,7 +1,4 @@
-/**
- * Delete one actual entry. The lock guard runs against the entry's OWN month,
- * so the entry has to be read before it is deleted.
- */
+/** The lock guard runs against the entry's OWN month, so it is read before deleting. */
 import { NextResponse } from "next/server";
 import { assertPeriodUnlocked } from "@/domain/locking";
 import { withRoute } from "@/lib/route";

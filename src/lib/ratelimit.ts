@@ -1,14 +1,8 @@
-/**
- * ratelimit.ts — a fixed-window attempt counter, in memory, no dependency.
- * One caller today: the credentials provider, keyed by email, so a leaked
- * password list cannot be replayed against one account at full speed.
- *
- * ponytail: the window lives in this process. Two App Runner instances means
- * two independent counters (effective ceiling = limit x instances) and a
- * deploy resets every one of them. The upgrade path is a shared store behind
- * this same two-function signature — Redis INCR+EXPIRE, or a Mongo collection
- * with a TTL index on `resetAt` — and nothing above it changes.
- */
+// A fixed-window attempt counter, in memory.
+//
+// ponytail: the window lives in THIS process, so N instances means N counters
+// and a deploy resets them. Upgrade: a shared store (Redis INCR+EXPIRE) behind
+// this same two-function signature.
 
 interface Bucket {
   count: number;
@@ -27,8 +21,7 @@ export function allowAttempt(key: string, limit = AUTH_LIMIT, windowMs = AUTH_WI
   const bucket = buckets.get(key);
 
   if (!bucket || now >= bucket.resetAt) {
-    // Sweep expired keys on insert rather than on a timer: an attacker cycling
-    // through invented addresses cannot grow the map without bound.
+    // Sweep on insert, not on a timer, so invented addresses cannot grow the map.
     if (buckets.size > 10_000) {
       for (const [k, v] of buckets) if (now >= v.resetAt) buckets.delete(k);
     }

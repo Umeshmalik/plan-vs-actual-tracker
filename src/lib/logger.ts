@@ -1,8 +1,4 @@
-/**
- * logger.ts — one structured line per request to stdout -> CloudWatch.
- * requestId, userId, route, status, ms: enough to answer "is it up, is it
- * slow, who hit what" without an APM vendor.
- */
+/** One structured line per request: requestId, userId, route, status, ms. */
 import pino from "pino";
 
 export const log = pino({

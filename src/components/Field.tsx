@@ -1,10 +1,7 @@
 /**
- * Field — Label + control slot + inline error, fed straight from the API's
- * VALIDATION_FAILED issues (`fieldErrors(error)[name]`). The server's wording
- * renders verbatim, so there is one error vocabulary end to end.
- *
- * The hint is `${htmlFor}-hint` and the error is `${htmlFor}-error`; point the
- * control's aria-describedby at whichever is showing.
+ * Label + control slot + inline error, fed from the API's VALIDATION_FAILED
+ * issues. Ids are `${htmlFor}-hint` / `${htmlFor}-error` — point the control's
+ * aria-describedby at whichever is showing.
  */
 import type { ReactNode } from "react";
 import { Label } from "@/components/ui/label";

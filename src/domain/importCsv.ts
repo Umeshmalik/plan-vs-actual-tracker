@@ -1,9 +1,6 @@
 /**
- * importCsv.ts — two-phase import: preview (nothing written) then commit
- * (all-or-nothing in a transaction). Converts "upload and pray" into a
- * reviewable diff. Locked-month rows are rejected at validation time; a file
- * that names the same category and month on several lines is a normal file,
- * because a category-month holds a whole month of spend.
+ * Two-phase import: preview (nothing written) then commit (all-or-nothing in a
+ * transaction). Repeated category+month lines are normal — a cell is a ledger.
  */
 import { createHash } from "crypto";
 import mongoose from "mongoose";
@@ -25,10 +22,8 @@ export async function previewCsv(repo: ScopedRepo, csvText: string): Promise<Row
   if (!/^month\s*,\s*category\s*,\s*amount$/i.test(header ?? ""))
     return [{ line: 0, ok: false, error: 'Header must be exactly "month,category,amount".' }];
 
-  // Two reads for the whole file, not two per row. Both answers are the same
-  // for every line — the categories a user owns and the months they have
-  // closed do not change mid-file — so a 20k-row import used to spend 40,000
-  // round trips re-asking two questions it had already answered.
+  // Two reads for the whole FILE, not two per row. tests/importCsv.test.ts
+  // counts driver commands, so an await inside the row loop fails it.
   const [categoriesByName, lockedMonths] = await Promise.all([repo.categoriesByName(), repo.lockedMonths()]);
 
   const results: RowResult[] = [];
@@ -77,29 +72,19 @@ export async function previewCsv(repo: ScopedRepo, csvText: string): Promise<Row
 export async function commitCsv(repo: ScopedRepo, csvText: string) {
   const results = await previewCsv(repo, csvText);
   const bad = results.filter(r => !r.ok);
-  if (bad.length) return { committed: 0, results }; // caller maps to VALIDATION_FAILED envelope
+  if (bad.length) return { committed: 0, results };
 
-  // ponytail: the lock is re-checked by previewCsv above, just outside the
-  // transaction — a lock landing in that millisecond window would be missed.
-  // Single-user editing makes it unreachable in practice; the real fix is a
-  // unique {userId, month} guard document written inside the transaction.
+  // ponytail: previewCsv re-checks locks just OUTSIDE the transaction, so a lock
+  // landing in that window is missed. Upgrade: a guard document written inside it.
 
-  // The batch id is the FILE, not the click: rows append now, so a random id per
-  // run would let a double-click or a nervous re-upload stack a second copy of
-  // every line and the report would sum both. Hashing the content means the same
-  // file always lands on the same batch, which the commit below clears before it
-  // writes — importing twice is importing once.
-  //
-  // ponytail: exact-match only. A file edited between imports is a different
-  // batch, so its unchanged lines are written a second time; the user removes
-  // the old batch's rows by hand. The upgrade is a per-row identity (a reference
-  // column in the CSV) the day anyone re-uploads amended files routinely.
+  // The batch id is the FILE, not the click, so a re-upload replaces its own rows
+  // rather than stacking a second copy of every line.
+  // ponytail: exact-match only — an EDITED file is a different batch and its
+  // unchanged lines are written again. Upgrade: a per-row reference column.
   const importBatchId = createHash("sha256").update(csvText).digest("hex");
   const session = await mongoose.startSession();
   try {
     await session.withTransaction(async () => {
-      // One insertMany, not an await per row: the transaction holds its locks
-      // for a single round trip instead of one per line of the file.
       await repo.deleteActualsByBatch(importBatchId, session);
       await repo.createActuals(
         results.map(r => ({ ...r.parsed!, source: "import" as const, importBatchId })),

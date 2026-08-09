@@ -1,15 +1,7 @@
 /**
- * VarianceBar — the signature element (frontend-plan §3).
- *
- * One shared zero axis down the middle of the column: under plan extends LEFT
- * in ledger green, over plan extends RIGHT in accounting red, all rows scaled
- * by the same `max` so the column reads as a tornado chart. Rows without
- * actuals draw hollow — visibly provisional.
- *
- * Geometry is a 1:1 port of design/prototype.html `varianceBar()`.
- * The svg stays aria-hidden; the shape is wrapped in a Tooltip trigger that
- * carries the accessible name and says the value in words, so the bar is a
- * real control rather than decoration.
+ * One shared zero axis: under plan extends left, over plan right, every row
+ * scaled by the same `max` so the column reads as a tornado chart. Rows without
+ * actuals draw hollow. Geometry is a 1:1 port of design/prototype.html.
  */
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { type CurrencyCode } from "@/lib/currency";
@@ -20,13 +12,7 @@ const W = 150;
 const H = 14;
 const MID = W / 2;
 
-/**
- * The sign's colour, in one place. It lives here because this is the module
- * that decides a variance is ledger green or accounting red; the report table,
- * the ranked chart and the monthly chart all read the rule from the mark that
- * draws it rather than each restating it. Semantic only — negative variance is
- * under plan, which is favourable.
- */
+/** The sign's colour, in one place. Negative is under plan, which is favourable. */
 export const varianceTone = (v: number) => (v < 0 ? "text-ledger" : v > 0 ? "text-acct" : undefined);
 
 export function VarianceBar({

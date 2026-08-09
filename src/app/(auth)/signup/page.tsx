@@ -1,12 +1,4 @@
-/**
- * Sign up — create the account, then sign straight into it. A server action for
- * the same reason /login is one: Auth.js writes the session cookie and issues
- * the redirect on the server, which a client fetch cannot do.
- *
- * There is no separate "account created, now sign in" step. `createUser` has
- * just validated this exact pair, so bouncing the user to a second form to
- * retype it would only add a place to fail.
- */
+/** Create the account, then sign straight into it — createUser just validated this pair. */
 import Link from "next/link";
 import { AuthError } from "next-auth";
 import { createUser } from "@/domain/users";
@@ -24,16 +16,12 @@ async function register(_prev: string | null, formData: FormData): Promise<strin
     password: String(formData.get("password") ?? ""),
   };
   try {
-    // Throws AppError with the user-facing wording already in `message` — the
-    // same envelope vocabulary every route uses, rendered verbatim like the
-    // rest of them.
     await createUser(credentials);
     await signIn("credentials", { ...credentials, redirectTo: "/report" });
     return null;
   } catch (err) {
     if (err instanceof AppError) return err.message;
-    // The account exists at this point, so a failure here is the sign-in, not
-    // the sign-up: send them to the form that can retry it.
+    // The account exists by now, so a failure here is the sign-in, not the sign-up.
     if (err instanceof AuthError) return "Account created, but sign-in failed. Try signing in.";
     throw err; // NEXT_REDIRECT on success
   }

@@ -1,12 +1,6 @@
 /**
- * Banner — the API error envelope made visible, as a shadcn Alert. The
- * server's `message` renders VERBATIM (one error vocabulary end to end);
- * PERIOD_LOCKED additionally shows the lock chip for the month it names.
- * `ok` is the success counterpart.
- *
- * No "use client": this module is server-renderable, and any caller that
- * passes `onDismiss` is already a client component, which pulls it into the
- * client bundle on its own.
+ * The API error envelope made visible; the server's `message` renders VERBATIM.
+ * No "use client" — a caller passing `onDismiss` is already one.
  */
 import { CircleAlert, CircleCheck } from "lucide-react";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";

@@ -1,10 +1,8 @@
 "use client";
 
 /**
- * useApiMutation — THE mutation. Every write in the app goes through here, so
- * the error envelope is parsed once, the toast wording is applied once, and the
- * server tree is refreshed once. A screen supplies the URL, the method and the
- * success sentence; it never touches fetch, pending flags or router.refresh.
+ * THE mutation. Every write goes through here, so the error envelope is parsed
+ * once, the toast applied once and the server tree refreshed once.
  */
 import { useMutation, type UseMutationResult } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
@@ -47,9 +45,7 @@ export function useApiMutation<T, V = void>({
 
   const mutation = useMutation<T, ApiEnvelopeError, V>({
     mutationFn: async vars => {
-      // A function `url` means the variables ARE the path params (DELETE
-      // /api/actuals/:id), so there is no body to send. A string url means the
-      // variables are the body.
+      // A function url means the variables ARE the path params, so no body.
       const byPath = typeof url === "function";
       const res = await api<T>(byPath ? url(vars) : url, {
         method,

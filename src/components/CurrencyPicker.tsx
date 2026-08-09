@@ -1,18 +1,8 @@
 "use client";
 
 /**
- * CurrencyPicker — the one global currency control, in the header beside the
- * range picker, because both are the same kind of thing: a saved preference
- * about how this book is read, not a parameter of the look you are taking at
- * it. Saving re-renders the server tree, so every figure on the page follows in
- * one hop — the write expires the tenant's cache tag and `useApiMutation` fires
- * `router.refresh()`.
- *
- * It sends ONLY `currency`. The fiscal-year control sends only its own field,
- * and settings that each write their own key cannot overwrite one another.
- *
- * The note in the menu is not decoration: a user who believes switching to INR
- * converted their ledger is a user reading wrong numbers off a right screen.
+ * The one global currency control. It sends ONLY `currency` — settings that each
+ * write their own key cannot overwrite one another.
  */
 import { Check, Coins } from "lucide-react";
 import { CURRENCIES, CURRENCY_CODES, type CurrencyCode } from "@/lib/currency";
@@ -47,9 +37,7 @@ export function CurrencyPicker({ currency }: { currency: CurrencyCode }) {
           <span>{currency}</span>
         </Button>
       </DropdownMenuTrigger>
-      {/* An explicit width, because the widest row ("Pound sterling") and the
-          note below would otherwise negotiate one between them and lose: the
-          menu collapsed to the note's measure and wrapped every label. */}
+      {/* Explicit width, or the note's measure wins and every label wraps. */}
       <DropdownMenuContent align="end" className="w-64">
         <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
           Display currency
@@ -64,8 +52,7 @@ export function CurrencyPicker({ currency }: { currency: CurrencyCode }) {
             }}
             className="gap-2.5"
           >
-            {/* The symbol is what the ledger will actually print, so it leads —
-                fixed width and centred, or "AED" shunts the codes out of line. */}
+            {/* Fixed width and centred, or "AED" shunts the codes out of line. */}
             <span className="w-7 shrink-0 text-center font-mono">{CURRENCIES[code].symbol.trim()}</span>
             <span className="w-9 shrink-0 font-mono text-xs">{code}</span>
             <span className="truncate text-muted-foreground">{CURRENCIES[code].label}</span>

@@ -1,19 +1,11 @@
 "use client";
 
 /**
- * PlansGrid — the target matrix (category rows × month columns) on shadcn
- * Table + Input, inside a Card.
+ * The target matrix (category rows x month columns).
  *
- * The UI never computes money: it sends the string the user typed and shows the
- * server's minor units back through toMajor(). Locking is mirrored here
- * (read-only column, chip in the header) but enforced by the API — a
- * PERIOD_LOCKED 409 lands in the Banner verbatim, which is the proof. A toast
- * confirms; the Banner is what stays on screen.
- *
- * Client machinery: every write is a `useApiMutation` (pending + toast +
- * refresh), the add-category popover is a TanStack Form validated by
- * `zCategoryCreate`, and cells save while you type on a TanStack Pacer
- * debouncer that blur and Enter flush.
+ * The UI never computes money: it sends the string the user typed and renders
+ * the server's minor units back. Locking is MIRRORED here (read-only cells) but
+ * enforced by the API — a PERIOD_LOCKED 409 lands in the Banner verbatim.
  */
 import { useRef, useState } from "react";
 import { revalidateLogic, useForm } from "@tanstack/react-form";
@@ -70,7 +62,7 @@ interface CellVars {
 
 const cellKey = (categoryId: string, month: string) => `${categoryId}:${month}`;
 
-/** Full month name for the lock controls ("Lock February"), UTC-pinned so no local timezone gets a vote. */
+/** UTC-pinned so no local timezone gets a vote. */
 const monthName = (month: string) =>
   new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1)).toLocaleString("en-US", {
     month: "long",
@@ -79,7 +71,7 @@ const monthName = (month: string) =>
 
 const HEAD = "text-[0.7rem] font-semibold uppercase tracking-[0.07em] text-muted-foreground";
 
-/** ~600ms after the last keystroke a cell saves itself; blur and Enter flush it early. */
+/** Blur and Enter flush it early. */
 const CELL_DEBOUNCE_MS = 600;
 
 export function PlansGrid({
@@ -96,15 +88,12 @@ export function PlansGrid({
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [addOpen, setAddOpen] = useState(false);
 
-  // Which cell holds the caret. A save that lands while the user is still
-  // typing must not pull the draft out from under them.
+  // Which cell holds the caret — a save landing mid-typing must not pull the
+  // draft out from under the user.
   const focused = useRef<string | null>(null);
-  // The raw string each cell last handed to the server. Blur can then tell
-  // "already saved, just unformatted" from "changed", so it settles the cell
-  // instead of re-sending it.
+  // What each cell last sent, so blur can tell "already saved" from "changed".
   const sent = useRef<Record<string, string>>({});
-  // Cells with a request in the air. A ref, not state, because blur reads it in
-  // the same tick the debounce flush fired the request.
+  // Refs, not state: blur reads this in the same tick the flush fired.
   const inFlight = useRef(new Set<string>());
 
   const savePlan = useApiMutation<{ plan: Plan }, CellVars & { amount: string }>({
@@ -136,8 +125,7 @@ export function PlansGrid({
 
   const categoryForm = useForm({
     defaultValues: { name: "" },
-    // Nothing turns red until the first submit, then it corrects itself as you
-    // type — the same moment the server used to speak up.
+    // Nothing turns red until the first submit, then it corrects as you type.
     validationLogic: revalidateLogic(),
     validators: { onDynamic: zCategoryCreate },
     onSubmit: ({ value, formApi }) =>
@@ -153,14 +141,10 @@ export function PlansGrid({
   for (const p of plans) saved[cellKey(p.categoryId, p.month)] = toMajor(p.amountMinor).toFixed(2);
   const isLocked = (month: string) => lockedMonths.includes(month);
 
-  /**
-   * One Banner, five mutations: show whichever write failed most recently. Each
-   * envelope is the server's own wording, and the hook has already toasted it.
-   */
+  /** One Banner, five mutations: whichever write failed most recently. */
   const writes = [savePlan, clearPlan, lockMonth, unlockMonth, addCategory];
   const failed = writes.filter(m => m.envelope).sort((a, b) => b.submittedAt - a.submittedAt)[0];
-  // VALIDATION_FAILED issues from POST /api/categories render under the input
-  // they name; anything that maps to no field is left to the Banner.
+  // Field-named issues render under their input; the rest fall to the Banner.
   const serverCategoryError = fieldErrors(addCategory.envelope).name;
 
   const clearDraft = (key: string) =>
@@ -170,28 +154,26 @@ export function PlansGrid({
       return next;
     });
 
-  /** The debounce, blur and Enter all land here. Untouched cells and unchanged values send nothing — and toast nothing. */
+  /** The debounce, blur and Enter all land here. Unchanged values send nothing. */
   function saveCell(categoryId: string, month: string) {
     const key = cellKey(categoryId, month);
     const raw = draft[key];
     if (raw === undefined || inFlight.current.has(key)) return;
     const amount = raw.trim();
 
-    // Covers every no-op: an empty cell that was already empty (pointless
-    // DELETE), a value retyped exactly as it stands, and a value the debounce
-    // already saved that only differs from the server's formatting.
+    // Every no-op: already-empty cell, value retyped as-is, or a value the
+    // debounce already saved that differs only in the server's formatting.
     if (amount === (saved[key] ?? "") || amount === sent.current[key]) return clearDraft(key);
 
     inFlight.current.add(key);
     sent.current[key] = amount;
     const settle = {
-      // Keep the typed text while the caret is still in the cell; once the user
-      // has left, drop the draft so the server's formatting shows through.
+      // Keep the typed text while the caret is in the cell; once the user leaves,
+      // drop the draft so the server's formatting shows through.
       onSuccess: () => {
         if (focused.current !== key) clearDraft(key);
       },
-      // Keeps the draft so the typed value stays beside the banner, and lets the
-      // same value be retried.
+      // Keep the draft so the typed value stays beside the banner and is retriable.
       onError: () => {
         delete sent.current[key];
       },
@@ -200,7 +182,7 @@ export function PlansGrid({
       },
     };
 
-    // The typed string goes to the server as-is; Zod owns "is this a number".
+    // The typed string goes as-is; Zod owns "is this a number".
     if (amount === "") clearPlan.mutate({ categoryId, month }, settle);
     else savePlan.mutate({ categoryId, month, amount }, settle);
   }
@@ -230,7 +212,7 @@ export function PlansGrid({
 
     if (e.key === "Enter") {
       e.preventDefault();
-      cellSaver.flush(); // don't make Enter wait out the debounce
+      cellSaver.flush();
       // Moving focus fires onBlur, which settles the cell; on the last row, blur explicitly.
       if (!focusCell(row + 1, col)) el.blur();
       return;

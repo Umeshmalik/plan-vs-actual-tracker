@@ -1,7 +1,4 @@
-/**
- * Lock enforcement — DRY even in tests: one loop asserts every mutating
- * domain path throws PERIOD_LOCKED on a locked month.
- */
+/** One loop over every mutating domain path, all of which must throw PERIOD_LOCKED. */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import mongoose, { Types } from "mongoose";

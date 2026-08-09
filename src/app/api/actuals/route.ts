@@ -1,8 +1,6 @@
 /**
- * Actuals — list (optionally filtered) and record. A category x month is a
- * ledger of entries, so POST APPENDS: several spends in one category in one
- * month are several rows, and the report sums them. Money arrives in MAJOR
- * units and is converted with toMinor() here, at the boundary, nowhere else.
+ * POST APPENDS — a category x month is a ledger of entries. Money arrives in
+ * MAJOR units and is converted here, at the boundary, nowhere else.
  */
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -31,9 +29,8 @@ export const POST = withRoute(async (req, repo) => {
   const body = zActualCreate.parse(await req.json());
   await repo.requireCategory(body.categoryId);
   await assertPeriodUnlocked(repo, body.month);
-  // Insert, not upsert: posting the same category and month again is a second
-  // expense in that month, not a correction of the first. Fixing a figure is
-  // DELETE /api/actuals/:id followed by a new POST.
+  // Insert, not upsert: the same category and month again is a second expense,
+  // not a correction. Fixing a figure is DELETE then POST.
   const actual = await repo.createActual({
     categoryId: body.categoryId,
     month: body.month,

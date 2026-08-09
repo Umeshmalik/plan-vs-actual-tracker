@@ -1,9 +1,7 @@
 /**
- * The hardening pass, asserted. Each test names the attack it closes:
- * user enumeration by timing, credential stuffing, query-selector injection,
- * and an unbounded request body. Nothing here asserts wall-clock — timing
- * tests are flaky by construction, so the timing fix is proven by counting
- * the bcrypt round that makes both answers cost the same.
+ * The hardening pass, asserted: enumeration by timing, credential stuffing,
+ * query-selector injection, unbounded bodies. Nothing asserts wall-clock — the
+ * timing fix is proven by COUNTING the bcrypt round that equalises both answers.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
@@ -15,24 +13,20 @@ import { ScopedRepo } from "../src/domain/repo";
 
 const state = vi.hoisted(() => ({ repo: null as unknown as ScopedRepo }));
 
-// Auth.js itself is stubbed: its ESM entry cannot resolve `next/server` outside
-// a Next build, and it is not what is under test — `authorize`, the function it
-// calls, is. The provider factory hands the config straight back so the real
-// authorize below is the real one.
+// Auth.js's ESM entry cannot resolve next/server outside a Next build, and it is
+// not what is under test — `authorize` is.
 vi.mock("next-auth", () => ({
   default: () => ({ handlers: {}, auth: async () => null, signIn: async () => {}, signOut: async () => {} }),
 }));
 vi.mock("next-auth/providers/credentials", () => ({ default: (config: unknown) => config }));
 
-// Real `authorize` (that is the thing under test), stubbed `requireRepo` so the
-// import routes get a repo without a session — same trick as routes.test.ts.
+// Stubbed requireRepo so the import routes get a repo without a session.
 vi.mock("../src/lib/auth", async importOriginal => ({
   ...(await importOriginal<typeof import("../src/lib/auth")>()),
   requireRepo: async () => state.repo,
 }));
 vi.mock("../src/lib/logger", () => ({ log: { info: () => {} }, logRequest: () => {} }));
-// No Next request store out here, so next/cache has nothing to hang off — and
-// the reads under test should hit Mongo anyway. (See routes.test.ts.)
+// No Next request store out here. See routes.test.ts.
 vi.mock("next/cache", () => ({ cacheTag: () => {}, cacheLife: () => {}, revalidateTag: () => {} }));
 
 import { authorize } from "../src/lib/auth";
@@ -55,8 +49,7 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 beforeAll(async () => {
   mongod = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   await mongoose.connect(mongod.getUri());
-  // The duplicate-address sign-up test asserts the unique {email} index, which
-  // autoIndex builds in the background — wait for it instead of racing it.
+  // autoIndex builds the unique {email} index in the background — wait for it.
   await Promise.all(Object.values(M).map(model => model.init()));
 
   userId = new Types.ObjectId();
@@ -80,7 +73,7 @@ describe("sign-in does not leak which addresses exist", () => {
     clearAttempts();
     const compare = vi.spyOn(bcrypt, "compare");
 
-    // Unknown address: compared against the fixed dummy hash, not returned early.
+    // Unknown address: compared against the dummy hash, not returned early.
     compare.mockClear();
     await expect(
       authorize({ email: "nobody@example.com", password: "not-the-password" })
@@ -99,8 +92,7 @@ describe("sign-in does not leak which addresses exist", () => {
 describe("sign-up creates an account the sign-in path accepts", () => {
   it("normalises the address, and authorize takes it straight away", async () => {
     clearAttempts();
-    // Mixed case and padding: if sign-up and sign-in normalised differently,
-    // this account could never be signed into again.
+    // If sign-up and sign-in normalised differently, this account would be lost.
     await expect(
       createUser({ email: "  New.User@Example.COM ", password: "a-good-password" })
     ).resolves.toMatchObject({ email: "new.user@example.com" });
@@ -144,8 +136,8 @@ describe("sign-up creates an account the sign-in path accepts", () => {
   });
 
   it("the seeded demo passwords still clear the bar the sign-up form holds", () => {
-    // The seed script and the README hand these out; a policy that rejected them
-    // would make the documented logins unreproducible through the UI.
+    // The README hands these out; a policy rejecting them makes the documented
+    // logins unreproducible through the UI.
     for (const password of ["review-me-2026", "tenant-b-2026"]) {
       expect(passwordStrength(password).score).toBeGreaterThanOrEqual(MIN_SCORE);
       expect(passwordStrength(password).hint).toBeUndefined();
@@ -154,8 +146,7 @@ describe("sign-up creates an account the sign-in path accepts", () => {
 
   it("caps how fast one address can be probed for existing accounts", async () => {
     clearAttempts();
-    // The duplicate error is a user-enumeration oracle; the rate limiter is what
-    // bounds how fast it can be read. Same counter, its own key space.
+    // The duplicate error is an enumeration oracle; this bounds how fast it reads.
     for (let i = 0; i < AUTH_LIMIT; i++) {
       await createUser({ email: "probe@example.com", password: "a-good-password" }).catch(() => {});
     }
@@ -214,13 +205,12 @@ describe("query-selector injection cannot reach a filter", () => {
     });
     const injected = { $ne: null } as unknown as string;
 
-    // Unguarded, this is the classic bypass: $ne:null matches every document.
+    // Unguarded, $ne:null matches every document.
     mongoose.set("sanitizeFilter", false);
     expect(await M.Actual.find({ userId, month: injected }).lean()).toHaveLength(1);
 
-    // Guarded, it is wrapped in $eq — it can only ever match a document whose
-    // month literally IS that object, i.e. none. (Mongoose rejects the cast,
-    // which is the same outcome from the caller's side: no data comes back.)
+    // Guarded, it is wrapped in $eq and can only match a document whose month
+    // literally IS that object — i.e. none.
     mongoose.set("sanitizeFilter", true);
     const leaked = await M.Actual.find({ userId, month: injected })
       .lean()
@@ -232,8 +222,7 @@ describe("query-selector injection cannot reach a filter", () => {
   });
 
   it("the deliberate month-range reads still work under sanitizeFilter", async () => {
-    // trusted() is what keeps $gte/$lte from being sanitised into nonsense —
-    // without it these two return nothing and the whole app goes blank.
+    // Without trusted(), $gte/$lte are sanitised and these return nothing.
     const cat = await state.repo.findCategoryByName("marketing");
     await state.repo.upsertPlan(String(cat!._id), "2026-02", 5000);
     await state.repo.lock("2026-02");

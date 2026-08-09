@@ -1,7 +1,4 @@
-/**
- * Import phase 1 — validate every row and report back. Nothing is written.
- * Turns "upload and pray" into a reviewable diff.
- */
+/** Phase 1 — validate every row and report back. Nothing is written. */
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { previewCsv } from "@/domain/importCsv";

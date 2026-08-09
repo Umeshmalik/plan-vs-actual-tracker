@@ -1,22 +1,11 @@
 /**
- * fiscalYear.ts — THE fiscal-year rule. Pure, no dependencies, so the header,
- * the range picker and the report title all derive their labels from the same
- * arithmetic instead of three near-copies. (DRY, same shape as month.ts.)
- *
- * A fiscal year here is twelve months starting at `startMonth`. `startMonth: 1`
- * IS the calendar year — which is why that is the default and why nothing about
- * the app changes for a user who never opens the setting.
- *
- * **Naming convention: a fiscal year is named by the calendar year it STARTS
- * in.** There is no universal answer — the UK and India name FY 2026-27 by its
- * start, the US federal government names FY2027 by its end — so the ambiguity
- * is resolved on screen rather than in the reader's head: a span is always
- * rendered "FY 2026/27", never a bare "FY 2026" that two people would read as
- * two different twelve-month windows.
+ * THE fiscal-year rule: twelve months from `startMonth`, named by the calendar
+ * year it STARTS in. Since that convention is not universal, a span always
+ * renders as "FY 2026/27" rather than a bare "FY 2026".
  */
 import { isMonth } from "./month";
 
-/** startMonth 1 = January = the calendar year. The default, and the brief's. */
+/** startMonth 1 = January = the calendar year. */
 export const CALENDAR_YEAR_START = 1;
 
 export const MONTH_NAMES = [
@@ -42,8 +31,7 @@ export function isFiscalStartMonth(v: unknown): v is number {
 
 /** The twelve `YYYY-MM` bounds of one fiscal year. */
 export function fiscalYearRange(fyYear: number, startMonth: number): { from: string; to: string } {
-  // Count 11 months on from the start and let the division carry the year, so
-  // a December start rolls to the following November without a special case.
+  // Let the division carry the year so a December start rolls to November.
   const last = startMonth - 1 + 11;
   return {
     from: `${fyYear}-${pad(startMonth)}`,
@@ -63,12 +51,7 @@ export function fiscalYearLabel(fyYear: number, startMonth: number): string {
   return `FY ${fyYear}/${pad((fyYear + 1) % 100)}`;
 }
 
-/**
- * The label for a range, but only when the range IS exactly one fiscal year —
- * otherwise null, and the caller prints the plain month span. This is what lets
- * the report title say "FY 2026/27" without ever mislabelling an arbitrary
- * selection that happens to be twelve months long.
- */
+/** Null unless the range is EXACTLY one fiscal year; the caller then prints the month span. */
 export function labelIfFiscalYear(from: string, to: string, startMonth: number): string | null {
   if (!isMonth(from) || !isMonth(to)) return null;
   const fyYear = fiscalYearOf(from, startMonth);
@@ -76,11 +59,7 @@ export function labelIfFiscalYear(from: string, to: string, startMonth: number):
   return range.from === from && range.to === to ? fiscalYearLabel(fyYear, startMonth) : null;
 }
 
-/**
- * The fiscal years a selector should offer: the one containing `anchor`, and
- * the `back` years before it. Newest first, because that is the one being
- * closed.
- */
+/** The year containing `anchor` plus the `back` before it, newest first. */
 export function recentFiscalYears(anchor: string, startMonth: number, back = 3): number[] {
   const current = fiscalYearOf(anchor, startMonth);
   return Array.from({ length: back + 1 }, (_, i) => current - i);

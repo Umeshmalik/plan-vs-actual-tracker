@@ -30,10 +30,8 @@ beforeAll(async () => {
   await repo.upsertPlan(String(mkt._id), "2026-02", toMinor(5000));
   await repo.upsertPlan(String(pay._id), "2026-02", toMinor(20000));
 
-  // Marketing January is TWO entries, the way a real month is spent, summing to
-  // the PDF's 4,800. The assertions below are unchanged from when it was one
-  // row: a cell's entries collapse into a single report row, and the variance
-  // reads off the sum. That is the whole point of dropping the unique index.
+  // TWO entries summing to 4,800 — the assertions below are unchanged from when
+  // it was one row, because a cell's entries collapse into one report row.
   await repo.createActual({ categoryId: String(mkt._id), month: "2026-01", amountMinor: toMinor(3100) });
   await repo.createActual({ categoryId: String(mkt._id), month: "2026-01", amountMinor: toMinor(1700) });
   await repo.createActual({ categoryId: String(pay._id), month: "2026-01", amountMinor: toMinor(20500) });
@@ -65,9 +63,8 @@ describe("report matches the assignment's sample table", () => {
   it("exports the same four rows, in major units, with a totals line", async () => {
     const csv = reportCsv(await runReport(repo, "2026-01", "2026-03"), "USD");
 
-    // An export that disagrees with the screen is worse than no export, so this
-    // asserts the whole file rather than a row of it. CRLF: Excel on Windows
-    // reads a bare-LF file as one long row.
+    // The whole file, not a row of it. CRLF: Excel on Windows reads bare LF as
+    // one long row.
     expect(csv.split("\r\n")).toEqual([
       "Category,Month,Plan (USD),Actual (USD),Variance (USD),Variance %,Closed",
       "Marketing,2026-01,5000,4800,-200,-4,no",
@@ -79,8 +76,7 @@ describe("report matches the assignment's sample table", () => {
   });
 
   it("quotes a comma in a name and defuses a cell a spreadsheet would execute", async () => {
-    // `=`-leading text is a live formula in Excel/Sheets/Numbers; a comma in a
-    // category silently adds a column. Both come from user input.
+    // `=`-leading text is a live formula; a comma silently adds a column.
     const hostile = await repo.createCategory('=HYPERLINK("evil"), Ops');
     await repo.upsertPlan(String(hostile._id), "2026-04", toMinor(10));
 

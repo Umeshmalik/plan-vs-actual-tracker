@@ -1,23 +1,12 @@
 /**
- * DataTable — the green-bar ledger table used by the report, the actuals list
- * and the import preview. TanStack Table v9 owns the row model; shadcn's Table
- * primitives own the markup. Banded odd rows, one ink rule under the header,
- * right-aligned mono numerals, and the Table's own overflow-x-auto container so
- * a wide table scrolls instead of breaking the 360px floor.
+ * The ledger table. TanStack Table v9 owns the row model, shadcn's Table
+ * primitives own the markup.
  *
- * Two render paths, because `/report` is a Server Component and hooks are not:
+ * Two render paths, because /report is a Server Component and hooks are not:
+ * plain tables go through the hook-free `constructTable`; `sortable` or
+ * `virtual` hands off to DataTableInteractive, which drives the same `Shell`.
  *
- *   - plain table (today's behaviour, every current caller) -> `constructTable`,
- *     the hook-free table-core constructor. Renders on the server, and on the
- *     client, unchanged.
- *   - `sortable` on a column, or `virtual` -> `DataTableInteractive`, the
- *     "use client" half, which drives the same `Shell` from `useTable` and
- *     `useVirtualizer`. Next refuses to let a Server Component module even
- *     *import* a hook, so those two live in a sibling file; everything they
- *     render comes from here.
- *
- * v9 note: `useReactTable`/`getCoreRowModel()` are the v8 API. v9 registers
- * behaviour through `tableFeatures` and builds with `useTable`/`constructTable`.
+ * v9 registers behaviour through `tableFeatures`, not v8's `getCoreRowModel()`.
  */
 import { type ReactNode } from "react";
 import { ChevronDown, ChevronUp, ChevronsUpDown } from "lucide-react";
@@ -49,18 +38,13 @@ import { cn } from "@/lib/utils";
 
 export interface Column<T> {
   key: string;
-  /** ReactNode so a Badge or chip can sit in a header cell. */
   header: ReactNode;
   numeric?: boolean;
   hideSm?: boolean;
   width?: string;
-  /** Opt in to a click-to-sort header. Needs a client-component caller. */
+  /** Click-to-sort header. Needs a client-component caller. */
   sortable?: boolean;
-  /**
-   * The comparable value behind the cell. `render` returns React elements,
-   * which are not comparable; without this a sortable column falls back to the
-   * rendered value only when it is already a string or a number.
-   */
+  /** The comparable value behind the cell — `render` returns React elements. */
   sortValue?: (row: T) => string | number;
   render: (row: T) => ReactNode;
 }
@@ -70,7 +54,7 @@ export interface DataTableProps<T> {
   columns: Column<T>[];
   rows: T[];
   rowKey: (row: T, i: number) => string;
-  /** e.g. locked rows -> "bg-bar-locked". A bg-* class replaces the banding. */
+  /** A bg-* class replaces the banding. */
   rowClassName?: (row: T) => string | undefined;
   footer?: ReactNode;
   empty?: ReactNode;
@@ -83,7 +67,6 @@ export interface DataTableProps<T> {
 /* ---------------------------------------------------------------- model --- */
 
 const sorting = { rowSortingFeature, sortedRowModel: createSortedRowModel() };
-/** `useTable` injects its own React reactivity, so this set stays hook-shaped. */
 export const clientFeatures = tableFeatures(sorting);
 /** `constructTable` has no adapter, so it needs the vanilla store bindings. */
 const staticFeatures = tableFeatures({
@@ -91,23 +74,15 @@ const staticFeatures = tableFeatures({
   coreReactivityFeature: storeReactivityBindings(),
 });
 
-/**
- * TanStack constrains row data to `Record<string, any>`, which the callers'
- * interfaces do not structurally satisfy, and `DataTable<T>` must stay
- * unconstrained. So the machinery below is written against one opaque row type
- * and `DataTable` casts its props into it once, at the entry point.
- */
+// TanStack constrains row data to Record<string, any>, which callers' interfaces
+// do not satisfy — so the machinery is written against one opaque row type and
+// DataTable casts into it once, at the entry point.
 export type AnyRow = Record<string, unknown>;
 type Feats = typeof clientFeatures;
 export type Model = TableModel<Feats, AnyRow>;
 type Def = ColumnDef<Feats, AnyRow>;
 
-/**
- * Ascending only — the sorted row model flips it for descending, so reversing
- * here would cancel that out. Amounts are integer minor units, hence `a - b`.
- * `undefined` never reaches this: `sortUndefined: "last"` intercepts it, which
- * is what puts blanks last in both directions.
- */
+/** Ascending only — the sorted row model flips it for descending. */
 function compare(a: ModelRow<Feats, AnyRow>, b: ModelRow<Feats, AnyRow>, columnId: string) {
   const x = a.getValue(columnId);
   const y = b.getValue(columnId);
@@ -121,13 +96,7 @@ function sortKey(column: Column<AnyRow>, row: AnyRow) {
   return typeof value === "string" || typeof value === "number" ? value : undefined;
 }
 
-/**
- * Column<T> -> ColumnDef<T>. `header`/`render` become the header and cell
- * templates flexRender calls; presentation flags (numeric, hideSm, width) stay
- * out of the model and are looked up by column id at render time. A sortable
- * column additionally gets an `accessorFn` — the value the comparator sees —
- * so the table never has to compare React elements.
- */
+/** Presentation flags stay out of the model and are looked up by column id at render. */
 export function toColumnDefs(columns: Column<AnyRow>[]): Def[] {
   return columns.map(column => {
     const def: Def = {
@@ -177,17 +146,15 @@ export function Shell({
 
   function bodyRow(row: ModelRow<Feats, AnyRow>, index: number) {
     const extra = rowClassName?.(row.original);
-    // Banding and a caller's row tint are both background-color, so emitting
-    // one class is the only order-independent way to let the caller's
-    // (e.g. bg-bar-locked) win.
+    // Banding and a caller's tint are both background-color, so emit only one
+    // class — the only order-independent way to let the caller's win.
     const band = extra?.includes("bg-") ? undefined : index % 2 === 0 && "bg-bar";
     return (
       <TableRow
         key={row.id}
         className={cn(band, extra)}
-        // Only meaningful while virtualised: the measurer keys off data-index,
-        // and aria-rowindex keeps the announced position honest when most rows
-        // are not in the DOM.
+        // Virtualised only: the measurer keys off data-index, and aria-rowindex
+        // keeps the announced position honest when most rows are not in the DOM.
         data-index={virtualizer ? index : undefined}
         aria-rowindex={virtualizer ? index + 2 : undefined}
         ref={virtualizer?.measureElement}
@@ -235,8 +202,7 @@ export function Shell({
 
       <TableHeader
         className={cn(
-          // border-collapse drops a sticky row's own border, so the ink rule is
-          // painted as an inset shadow while the body scrolls under it.
+          // border-collapse drops a sticky row's border, so the rule is a shadow.
           virtualizer && "sticky top-0 z-10 bg-white [&_th]:shadow-[inset_0_-1px_0_var(--color-ink)]"
         )}
       >

@@ -1,21 +1,12 @@
 "use client";
 
 /**
- * ActualForm — one spend entry against a category+month, on shadcn Select /
- * Popover+Calendar / Input inside a Card. Category and Month double as the
- * selector (they rewrite the query string), so they stay enabled even when the
- * period is closed: you must still be able to look at a locked month.
+ * One spend entry against a category+month. Category and Month double as the
+ * selector (they rewrite the query string), so they stay enabled while the
+ * period is closed — you must still be able to LOOK at a locked month.
  *
- * The form APPENDS: a category-month holds a whole month of spend, so submitting
- * adds a row to the list beside it rather than replacing what is there. Amount
- * and note clear on success and the selection stays put, which is what makes
- * logging four March invoices four submits instead of four navigations.
- *
- * Field state and client validation are TanStack Form's, using the server's own
- * `zActualCreate` rules through Standard Schema. The write is a
- * `useApiMutation`. Field errors come from the server's VALIDATION_FAILED
- * issues, envelope errors from the Banner — one error vocabulary, rendered
- * verbatim.
+ * The form APPENDS: amount and note clear on success while the selection stays
+ * put, so logging four March invoices is four submits, not four navigations.
  */
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -38,14 +29,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 const toDate = (month: string) => parse(month, "yyyy-MM", new Date());
 
-/**
- * `zActualCreate.shape.*` are the server's own rules, reused verbatim. Their
- * declared Standard Schema *input* still is not the `string` a text input holds
- * — Zod 4 widened the coercing amount from `number` to `unknown`, and the
- * optional note is `string | undefined` — while at runtime both take exactly
- * that string. Only the declared input type is narrowed here; not one rule is
- * restated.
- */
+// Narrows the DECLARED input type of the server's own rules to the string a text
+// input holds; not one rule is restated.
 const forTypedText = (schema: unknown) => schema as StandardSchemaV1<string, unknown>;
 
 /** The API's own wording for a closed period, shown before the API has to say it. */
@@ -84,13 +69,10 @@ export function ActualForm({
 
   const form = useForm({
     defaultValues: { amount: "", note: "" },
-    // Nothing turns red until the first submit, then the fields correct
-    // themselves as you type — the same moment the server used to speak up.
+    // Nothing turns red until the first submit, then it corrects as you type.
     validationLogic: revalidateLogic(),
-    // Typed strings go straight to the server; Zod owns amount validity.
-    // mutateAsync, so the clear waits for the write to land: a rejected one
-    // leaves the figures where the user can fix them, and the hook has already
-    // said why in a toast and the Banner.
+    // mutateAsync so the reset waits for the write: a rejected one leaves the
+    // figures on screen where the user can fix them.
     onSubmit: ({ value, formApi }) =>
       logSpend
         .mutateAsync({
@@ -105,8 +87,7 @@ export function ActualForm({
         ),
   });
 
-  // Field-level issues land under the input they name; anything that maps to no
-  // field is left to the Banner.
+  // Field-named issues land under their input; the rest fall to the Banner.
   const fe = fieldErrors(logSpend.envelope);
 
   function select(next: { categoryId?: string; month?: string }) {
