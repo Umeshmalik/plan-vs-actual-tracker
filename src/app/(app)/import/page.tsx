@@ -6,6 +6,7 @@
  * never judges a row.
  */
 import { requireRepo } from "@/lib/auth";
+import { getSettings } from "@/lib/reads";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ImportFlow } from "./ImportFlow";
@@ -14,8 +15,11 @@ const LEGEND = "font-mono text-[0.7rem] tracking-[0.07em] text-muted-foreground 
 const SAMPLE = "bg-muted w-fit rounded-md px-2 py-1 font-mono text-xs";
 
 export default async function Page() {
-  const repo = await requireRepo();
-  const names = (await repo.listCategories()).map(c => c.name);
+  const repo = await requireRepo(); // authenticate first — the cache never decides who is asking
+  const [names, { currency }] = await Promise.all([
+    repo.listCategories().then(cs => cs.map(c => c.name)),
+    getSettings(String(repo.uid)),
+  ]);
 
   return (
     <section className="flex flex-col gap-4">
@@ -62,7 +66,7 @@ export default async function Page() {
         </CardContent>
       </Card>
 
-      <ImportFlow />
+      <ImportFlow currency={currency} />
     </section>
   );
 }

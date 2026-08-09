@@ -19,6 +19,7 @@ import { DataTable, type Column } from "@/components/DataTable";
 import { EmptyState } from "@/components/EmptyState";
 import { LockChip } from "@/components/LockChip";
 import { MoneyText } from "@/components/MoneyText";
+import { type CurrencyCode } from "@/lib/currency";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,11 +47,13 @@ export function ActualsList({
   caption,
   month,
   locked,
+  currency,
 }: {
   rows: Row[];
   caption: string;
   month: string;
   locked: boolean;
+  currency: CurrencyCode;
 }) {
   // A function url means the id is a path param, so nothing is sent as a body.
   const removeEntry = useApiMutation<{ deleted: number }, { id: string }>({
@@ -71,7 +74,7 @@ export function ActualsList({
       key: "amount",
       header: "Amount",
       numeric: true,
-      render: r => <MoneyText minor={r.amountMinor} />,
+      render: r => <MoneyText currency={currency} minor={r.amountMinor} />,
     },
     {
       key: "remove",
@@ -101,9 +104,9 @@ export function ActualsList({
             <AlertDialogHeader>
               <AlertDialogTitle>Remove this entry?</AlertDialogTitle>
               <AlertDialogDescription>
-                Removing this entry of <MoneyText minor={r.amountMinor} /> leaves {caption} with no recorded
-                spend, so the report counts it as 0. Log it again if you need it back — or save a new figure
-                over it instead, which does not need this step.
+                Removing this entry of <MoneyText currency={currency} minor={r.amountMinor} /> leaves{" "}
+                {caption} with no recorded spend, so the report counts it as 0. Log it again if you need it
+                back — or save a new figure over it instead, which does not need this step.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

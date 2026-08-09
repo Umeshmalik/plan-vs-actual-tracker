@@ -8,6 +8,7 @@
  * request validation in schemas.ts.
  */
 import mongoose, { Schema, model, models, type Model, type Types } from "mongoose";
+import { CURRENCY_CODES, DEFAULT_CURRENCY, type CurrencyCode } from "../lib/currency";
 import { CALENDAR_YEAR_START } from "../lib/fiscalYear";
 
 export interface UserDoc {
@@ -16,6 +17,8 @@ export interface UserDoc {
   passwordHash: string;
   /** 1-12; 1 = January = the calendar year. See lib/fiscalYear.ts. */
   fiscalYearStartMonth: number;
+  /** How this user's figures are LABELLED. Nothing stored is ever converted. */
+  currency: CurrencyCode;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -64,6 +67,10 @@ const User = new Schema<UserDoc>(
     // default is what makes it invisible to anyone who never opens the setting
     // — 1 is January, and a fiscal year starting in January IS a calendar year.
     fiscalYearStartMonth: { type: Number, default: CALENDAR_YEAR_START, min: 1, max: 12 },
+    // Display only — see lib/currency.ts. `enum` keeps a code the app cannot
+    // render out of the collection, and the default is what makes the setting
+    // invisible to anyone who never opens it.
+    currency: { type: String, default: DEFAULT_CURRENCY, enum: CURRENCY_CODES },
   },
   { timestamps: true }
 );
@@ -178,11 +185,28 @@ const PeriodLock = new Schema<PeriodLockDoc>({
 // directly after userId, so the range is an index bound with nothing to scan.
 PeriodLock.index({ userId: 1, month: 1 }, { unique: true });
 
+/**
+ * Mongoose caches a compiled model by name on its singleton, so re-running this
+ * module returns the FIRST schema it ever saw. In production that is the point
+ * — one process, one compile. In development Next re-executes the module on
+ * every hot reload while the mongoose singleton survives, so an edited schema
+ * is ignored until someone restarts the server, and a write to a field the
+ * stale schema lacks is silently discarded by strict mode rather than failing.
+ * A 200 that changes nothing is the worst shape a bug can take, so dev throws
+ * the cached model away and compiles the schema in front of it.
+ *
+ * Tests run with NODE_ENV=test and one process per file, so nothing here fires.
+ */
+function compile<T>(name: string, schema: Schema<T>): Model<T> {
+  if (process.env.NODE_ENV === "development" && models[name]) mongoose.deleteModel(name);
+  return (models[name] as Model<T>) ?? model<T>(name, schema);
+}
+
 export const M = {
-  User: (models.User as Model<UserDoc>) ?? model<UserDoc>("User", User),
-  Category: (models.Category as Model<CategoryDoc>) ?? model<CategoryDoc>("Category", Category),
-  Plan: (models.Plan as Model<PlanDoc>) ?? model<PlanDoc>("Plan", Plan),
-  Actual: (models.Actual as Model<ActualDoc>) ?? model<ActualDoc>("Actual", Actual),
-  PeriodLock: (models.PeriodLock as Model<PeriodLockDoc>) ?? model<PeriodLockDoc>("PeriodLock", PeriodLock),
+  User: compile<UserDoc>("User", User),
+  Category: compile<CategoryDoc>("Category", Category),
+  Plan: compile<PlanDoc>("Plan", Plan),
+  Actual: compile<ActualDoc>("Actual", Actual),
+  PeriodLock: compile<PeriodLockDoc>("PeriodLock", PeriodLock),
 };
 export type Db = typeof mongoose;

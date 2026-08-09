@@ -10,16 +10,19 @@
 import { NextResponse } from "next/server";
 import { zReportQuery } from "@/domain/schemas";
 import { reportCsv } from "@/domain/report";
-import { getReport } from "@/lib/reads";
+import { getReport, getSettings } from "@/lib/reads";
 import { withRoute } from "@/lib/route";
 
 export const dynamic = "force-dynamic";
 
 export const GET = withRoute(async (req, repo) => {
   const { from, to } = zReportQuery.parse(Object.fromEntries(req.nextUrl.searchParams));
-  const report = await getReport(String(repo.uid), from, to);
+  const [report, { currency }] = await Promise.all([
+    getReport(String(repo.uid), from, to),
+    getSettings(String(repo.uid)),
+  ]);
 
-  return new NextResponse(reportCsv(report), {
+  return new NextResponse(reportCsv(report, currency), {
     headers: {
       // charset matters: category names are free text, and Excel reads a
       // headerless byte stream as the local codepage.

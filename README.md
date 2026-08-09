@@ -85,17 +85,19 @@ The `deploy` job is dormant today — the secrets are not set, and the Git integ
 
 ## Tests
 
-`npm test` (Vitest, real mongod via `mongodb-memory-server` — the first run downloads the binary). 74 tests, 8 files.
+`npm test` (Vitest, real mongod via `mongodb-memory-server` — the first run downloads the binary). 99 tests, 11 files.
 
-| File                                             | Proves                                                                                                                                                           |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tests/report.sample.test.ts`                    | The PDF's exact table: −200/−4.00%, +500/+2.50%, −5,000/−100%, −200/−1.00% — and that the CSV export prints the same figures, quoted and formula-safe            |
-| `tests/variance.test.ts`                         | plan = 0, missing actual, unbudgeted spend, minor-unit totals, accounting formatting                                                                             |
-| `tests/locking.test.ts`                          | `PERIOD_LOCKED` is enforced in the domain layer, not by hiding a button                                                                                          |
-| `tests/importCsv.test.ts`                        | Bad month, unknown category, locked-month row, bad header, blank lines, commit atomicity — plus that a 200-row file costs the same reads as a 2-row one          |
-| `tests/scoping.test.ts` · `tests/routes.test.ts` | User B cannot list, read, report on or delete user A's rows; every route's status envelope; and that a write — only a write — expires that tenant's cached reads |
-| `tests/security.test.ts`                         | The hardening below, each test named for the attack it closes, plus sign-up: address normalising, the duplicate refusal, and the weak-password gate              |
-| `tests/indexes.test.ts`                          | `explain("executionStats")` on the repo's own queries: `IXSCAN` on `{userId, month, categoryId}`, no blocking `SORT`, keys examined ≈ rows returned              |
+| File                                             | Proves                                                                                                                                                                   |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `tests/report.sample.test.ts`                    | The PDF's exact table: −200/−4.00%, +500/+2.50%, −5,000/−100%, −200/−1.00% — and that the CSV export prints the same figures, quoted and formula-safe                    |
+| `tests/variance.test.ts`                         | plan = 0, missing actual, unbudgeted spend, minor-unit totals, accounting formatting in each currency — and that the report's two chart groupings never net a month away |
+| `tests/settings.test.ts`                         | The currency preference round-trips, actually lands on the document, and neither header control clobbers the other's field                                               |
+| `tests/chartGeometry.test.ts`                    | A stacked segment below the axis draws its full block — recharts hands those back with a negative height, and the naive inset collapsed them to a hairline               |
+| `tests/locking.test.ts`                          | `PERIOD_LOCKED` is enforced in the domain layer, not by hiding a button                                                                                                  |
+| `tests/importCsv.test.ts`                        | Bad month, unknown category, locked-month row, bad header, blank lines, commit atomicity — plus that a 200-row file costs the same reads as a 2-row one                  |
+| `tests/scoping.test.ts` · `tests/routes.test.ts` | User B cannot list, read, report on or delete user A's rows; every route's status envelope; and that a write — only a write — expires that tenant's cached reads         |
+| `tests/security.test.ts`                         | The hardening below, each test named for the attack it closes, plus sign-up: address normalising, the duplicate refusal, and the weak-password gate                      |
+| `tests/indexes.test.ts`                          | `explain("executionStats")` on the repo's own queries: `IXSCAN` on `{userId, month, categoryId}`, no blocking `SORT`, keys examined ≈ rows returned                      |
 
 The index test exists because that second Plan index is the one thing that rots silently. The unique `{userId, categoryId, month}` cannot serve the report — `categoryId` sits between the equality and the month range, so Mongo walks every key the tenant owns while still reporting `IXSCAN`. `{userId, month, categoryId}` turns the range back into an index bound and puts the group key in the index; the test asserts the index _by name_ and counts keys, so reordering it fails here rather than in production.
 
@@ -116,25 +118,29 @@ Nothing below was added by weakening anything above it; `tests/security.test.ts`
 
 Money in responses is **integer minor units**; requests take major units (`amount: 5000` = 5,000.00). Every error is the one envelope from `src/lib/errors.ts`.
 
-| Method + path               | Request                                | 200 response                                                    |
-| --------------------------- | -------------------------------------- | --------------------------------------------------------------- |
-| `GET /api/categories`       | —                                      | `{ categories: [{ _id, name }] }`                               |
-| `POST /api/categories`      | `{ name }`                             | `{ category }`                                                  |
-| `PUT /api/plans`            | `{ categoryId, month, amount }`        | `{ plan }`                                                      |
-| `DELETE /api/plans`         | `{ categoryId, month }`                | `{ deleted }`                                                   |
-| `GET /api/actuals`          | `?month=&categoryId=` (both optional)  | `{ actuals }`                                                   |
-| `POST /api/actuals`         | `{ categoryId, month, amount, note? }` | `{ actual }`                                                    |
-| `DELETE /api/actuals/:id`   | —                                      | `{ deleted: 1 }`                                                |
-| `GET /api/report`           | `?from=&to=` (YYYY-MM)                 | `{ rows, totals, lockedMonths }`                                |
-| `GET /api/report/export`    | `?from=&to=` (YYYY-MM)                 | the same rows as `text/csv`, as a download                      |
-| `GET /api/locks`            | `?from=&to=`                           | `{ lockedMonths: string[] }`                                    |
-| `POST /api/locks`           | `{ month }`                            | `{ month, lockedAt }`                                           |
-| `DELETE /api/locks/:month`  | —                                      | `{ month, unlocked: true }`                                     |
-| `POST /api/imports/preview` | `{ csv }`                              | `{ results, okCount, errorCount }` — nothing written            |
-| `POST /api/imports/commit`  | `{ csv }`                              | `{ committed, importBatchId, results }` — 422 if any row is bad |
-| `GET /api/health`           | —                                      | `{ ok, db, version }` — the deploy health check                 |
+| Method + path               | Request                                       | 200 response                                                    |
+| --------------------------- | --------------------------------------------- | --------------------------------------------------------------- |
+| `GET /api/categories`       | —                                             | `{ categories: [{ _id, name }] }`                               |
+| `POST /api/categories`      | `{ name }`                                    | `{ category }`                                                  |
+| `PUT /api/plans`            | `{ categoryId, month, amount }`               | `{ plan }`                                                      |
+| `DELETE /api/plans`         | `{ categoryId, month }`                       | `{ deleted }`                                                   |
+| `GET /api/actuals`          | `?month=&categoryId=` (both optional)         | `{ actuals }`                                                   |
+| `POST /api/actuals`         | `{ categoryId, month, amount, note? }`        | `{ actual }`                                                    |
+| `DELETE /api/actuals/:id`   | —                                             | `{ deleted: 1 }`                                                |
+| `GET /api/report`           | `?from=&to=` (YYYY-MM)                        | `{ rows, totals, lockedMonths }`                                |
+| `GET /api/report/export`    | `?from=&to=` (YYYY-MM)                        | the same rows as `text/csv`, as a download                      |
+| `GET /api/locks`            | `?from=&to=`                                  | `{ lockedMonths: string[] }`                                    |
+| `POST /api/locks`           | `{ month }`                                   | `{ month, lockedAt }`                                           |
+| `DELETE /api/locks/:month`  | —                                             | `{ month, unlocked: true }`                                     |
+| `POST /api/imports/preview` | `{ csv }`                                     | `{ results, okCount, errorCount }` — nothing written            |
+| `POST /api/imports/commit`  | `{ csv }`                                     | `{ committed, importBatchId, results }` — 422 if any row is bad |
+| `GET /api/settings`         | —                                             | `{ fiscalYearStartMonth, currency }`                            |
+| `PUT /api/settings`         | `{ fiscalYearStartMonth? }` / `{ currency? }` | the settings after the write                                    |
+| `GET /api/health`           | —                                             | `{ ok, db, version }` — the deploy health check                 |
 
-Codes → status: `VALIDATION_FAILED` 422 · `PERIOD_LOCKED` 409 · `UNKNOWN_CATEGORY` 422 · `DUPLICATE_PLAN` 409 · `UNAUTHORIZED` 401 · `NOT_FOUND` 404.
+Both settings fields are optional and each header control sends only its own, so the two cannot overwrite one another when two tabs are open. `PUT` re-reads the document it just wrote and fails loudly if the value did not land — Mongoose's `strict` mode drops an update to a path the compiled schema does not know, and it drops it silently, which is a 200 that changes nothing.
+
+Codes → status: `VALIDATION_FAILED` 422 · `PERIOD_LOCKED` 409 · `UNKNOWN_CATEGORY` 422 · `DUPLICATE_PLAN` 409 · `UNAUTHORIZED` 401 · `NOT_FOUND` 404 · `INTERNAL` 500.
 
 Every response carries `cache-control: no-store` and an `x-request-id`; the caching described below is server-side only, so the wire contract is byte-identical to what it was before it existed.
 
@@ -149,6 +155,22 @@ Two constraints shape the module: a cached function may not read cookies, so the
 `experimental: { useCache: true }` in `next.config.mjs` turns on the `"use cache"` directive and nothing else. The eventual upgrade is `cacheComponents: true`, but that is not a rename: it also switches the app to partial prerendering, which rejects the `dynamic = "force-dynamic"` on the API routes and wants a Suspense boundary above every page that reads cookies or `searchParams` — here, all of them. Every screen sits behind a session, so there is no static shell to prerender and the migration would buy skeletons, not speed.
 
 **CSV import cost is flat in file size.** Preview used to ask two questions per row — does this category exist, is this month locked — whose answers cannot change mid-file; at the 1 MB body limit that is ~40,000 round-trips to learn two things. Both are read once up front (`repo.categoriesByName()`, `repo.lockedMonths()`), and the commit is one `bulkWrite` inside the transaction instead of an `await` per row, so the transaction holds its locks for a single round-trip. Those writes are upserts, which is what makes re-importing a file land on the same figures rather than doubling the month. `tests/importCsv.test.ts` counts commands off the driver rather than timing them: 200 rows must preview in the same 2 reads as 2 rows, and commit in exactly 1 write command.
+
+## Currency and number formatting
+
+The display currency is a **per-user preference** — the picker sits in the header beside the range picker, and USD, EUR, GBP, INR and AED are supported (`src/lib/currency.ts`). It is a **label, not a conversion**: nothing stored is ever re-valued, there are no FX rates in the product, and the picker says so where it is chosen. Every supported code has exactly two decimal places, which is what leaves the minor-units contract untouched; adding one with a different exponent (JPY has 0, KWD has 3) would change what every integer already in the database means, so it is a migration rather than a new row in that table.
+
+It reaches figures as an explicit `currency` prop — required on `MoneyText` and `VarianceBar`, threaded from each page's `getSettings` — rather than a module-level default in `money.ts`, which would be one process-wide value shared by every tenant. Required, so a display site that forgets it is a compile error rather than another tenant's symbol.
+
+Figures print as `$50,000.00` — symbol, comma groups, dot decimal, negatives in parentheses **around** the symbol (`($200.00)`), which is how a ledger prints a credit. The separator pair is fixed rather than taken from the locale, because the two marks have to be chosen together: de-DE groups with the same dot it uses as a decimal, so borrowing its group mark while keeping the house decimal would print `20.500.00`. What the locale _is_ asked for is where the groups fall, so an INR reader gets `₹20,50,000.00` rather than a figure they have to re-count. The CSV export names the currency in its money **headers** (`Plan (INR)`) instead of printing a symbol per cell, so every amount stays a number a spreadsheet can sum.
+
+## The report's two charts
+
+The report leads with the summary tiles, then the charts, then the ledger — headline, shape, detail.
+
+**Where the variance is** ranks every category in the range by `|variance|`, drawn with the same `VarianceBar` mark the table's variance column uses, so the two read as one chart at two granularities. The table is sorted by category name, which is the one order that hides the biggest miss.
+
+**Variance by month** is a diverging **stacked** bar: one segment per category, over plan stacking up and under plan stacking down. It is deliberately not a net-per-month bar. Netting is lossy in exactly the way that matters here — an overspend and an equal underspend cancel, so a month where two categories both missed badly draws as a month that landed on plan. Stacking keeps the month's gross over and gross under both on screen and leaves the net readable as the distance between the two ends. A month with no plans and no actuals is flagged rather than drawn as a zero, because zero means "landed exactly on plan" and the two must not look alike — the same distinction the rows make with `hasActuals`. `byMonth()` and `byCategory()` in `src/lib/variance.ts` own both groupings, pure and unit-tested beside the rest of the math.
 
 ## Variance % when plan is zero
 
@@ -175,11 +197,11 @@ The frontend renders `message` verbatim next to a lock badge — one wording, on
 
 ## How missing actuals are displayed
 
-A category×month with a plan and no actuals is treated as **actual = 0** everywhere — in the row, in the totals, and in the chart — so the sample data's Feb Marketing row reads −5,000 / −100%. The row also carries `hasActuals: false`, which the UI shows as a _hollow_ variance bar plus text (never colour alone), so "spent nothing" is visibly different from "we have no data". The symmetric case — an actual with no plan (unbudgeted spend, seeded as the Tools row) — falls out of the report's `$unionWith` for free and is flagged `hasPlan: false`; its variance % is `null` by the same zero-plan rule.
+A category×month with a plan and no actuals is treated as **actual = 0** everywhere — in the row, in the totals, and in the charts — so the sample data's Feb Marketing row reads −5,000 / −100%. The row also carries `hasActuals: false`, which the UI shows as a _hollow_ variance bar plus text (never colour alone), so "spent nothing" is visibly different from "we have no data". The monthly chart carries the same distinction one level up as `hasData`: a month nobody has entered anything for is named in words under the plot and in the chart's accessible summary, never drawn as a zero bar that would read as "on plan". The symmetric case — an actual with no plan (unbudgeted spend, seeded as the Tools row) — falls out of the report's `$unionWith` for free and is flagged `hasPlan: false`; its variance % is `null` by the same zero-plan rule.
 
 ## Project structure
 
-Every rule has exactly one implementation, imported everywhere it is needed: `src/lib/money.ts` (minor units + accounting display) · `month.ts` (`YYYY-MM` logic, no `Date`, no timezones) · `variance.ts` (the math, pure) · `errors.ts` (`AppError` + `toResponse`, the only producer of the envelope) · `route.ts` (the wrapper: auth, logging, body limit, headers, cache invalidation) · `reads.ts` (the cached read layer both the screens and the `GET` routes call) · `auth.ts` (`requireRepo`, the one door from a session to data) · `ratelimit.ts` · `range.ts` (`searchParams` → a validated month range) · `db.ts` (connection singleton + `sanitizeFilter`) · `src/domain/models.ts` (schemas and every index) · `repo.ts` (`ScopedRepo`) · `locking.ts` (the guard) · `report.ts` (the one `$unionWith`) · `importCsv.ts` (preview / transactional commit) · `schemas.ts` (Zod = validation **and** the types).
+Every rule has exactly one implementation, imported everywhere it is needed: `src/lib/money.ts` (minor units + accounting display) · `currency.ts` (the supported currencies, display only) · `month.ts` (`YYYY-MM` logic, no `Date`, no timezones) · `variance.ts` (the math, pure — plus the two groupings the report's charts read) · `errors.ts` (`AppError` + `toResponse`, the only producer of the envelope) · `route.ts` (the wrapper: auth, logging, body limit, headers, cache invalidation) · `reads.ts` (the cached read layer both the screens and the `GET` routes call) · `auth.ts` (`requireRepo`, the one door from a session to data) · `ratelimit.ts` · `range.ts` (`searchParams` → a validated month range) · `db.ts` (connection singleton + `sanitizeFilter`) · `src/domain/models.ts` (schemas and every index) · `repo.ts` (`ScopedRepo`) · `locking.ts` (the guard) · `report.ts` (the one `$unionWith`) · `importCsv.ts` (preview / transactional commit) · `schemas.ts` (Zod = validation **and** the types).
 
 Route handlers hold no business logic — parse, guard, call the domain, return.
 
@@ -215,7 +237,10 @@ Idempotency keys on `POST /api/imports/commit` so a retried upload cannot double
 | Integer minor units                             | Exact sums, no float drift                                                                                                 | One conversion boundary to police (`toMinor`/`toMajor`)                                                              |
 | `YYYY-MM` string month keys                     | Lexicographic order = chronological; `$gte/$lte` ranges; zero timezone bugs                                                | Not a `Date` in the DB, so no day-level reporting later without a migration                                          |
 | Month-level locks                               | One guard function; matches the sample data and the brief                                                                  | No quarter or year locks — would need a period→months mapping for no rubric payoff                                   |
-| Missing actual = 0                              | Totals, rows and chart stay internally consistent                                                                          | Feb Marketing reads −100%, which needs the `hasActuals` flag to stay honest                                          |
+| Missing actual = 0                              | Totals, rows and charts stay internally consistent                                                                         | Feb Marketing reads −100%, which needs the `hasActuals` flag to stay honest                                          |
+| Monthly chart stacks, never nets                | A netted bar draws a month with equal-and-opposite misses as a month on plan — it can hide exactly what the app is for     | One rect per category per month instead of one per month, and a custom tooltip to keep it readable                   |
+| Currency is a label, not a conversion           | A ledger's figures mean what was entered; re-valuing them would need rates, a rate date, and an answer for locked periods  | Two-decimal currencies only, or the stored minor-unit integers change meaning                                        |
+| `currency` is a required prop, not a default    | A per-tenant value read from module scope is one process-wide value; required makes a missed display site a compile error  | Threaded through every page and money component instead of read from context (RSC cannot read client context)        |
 | One actual per category×month                   | The same spend cannot be recorded twice by a double submit, a repeated CSV row, or a re-import; every write is idempotent  | No per-receipt line items — a cell holds one figure and one note, and the CSV has to arrive pre-aggregated           |
 | Unbudgeted spend surfaced (`hasPlan: false`)    | Actual-with-no-plan is the edge case the spec did not test, and the one a finance reviewer cares about                     | An extra flag through the row type and the UI                                                                        |
 | `PUT /api/plans` upsert instead of POST + PUT   | One idempotent endpoint for "set this cell"; retries are safe                                                              | No 201-vs-200 distinction                                                                                            |

@@ -14,6 +14,7 @@ import { z } from "zod";
 import { M } from "./models";
 import { AppError } from "../lib/errors";
 import { connectDb } from "../lib/db";
+import { CURRENCY_CODES, DEFAULT_CURRENCY, isCurrency } from "../lib/currency";
 import { CALENDAR_YEAR_START, isFiscalStartMonth } from "../lib/fiscalYear";
 import { passwordStrength } from "../lib/password";
 import { allowAttempt } from "../lib/ratelimit";
@@ -77,36 +78,63 @@ export const hashPassword = (password: string) => bcrypt.hash(password, BCRYPT_C
  * exists to inject `userId` into every filter — is the wrong tool. The filter
  * here is `_id`, and this module is the only place allowed to write it.
  */
+/**
+ * Both fields are optional because each has its own control in the header and
+ * each sends only what it changed. A PUT that named every setting would make
+ * the currency picker quietly rewrite the fiscal year to whatever the page was
+ * rendered with — the classic lost-update the moment two tabs are open.
+ */
 export const zSettings = z.object({
   fiscalYearStartMonth: z.coerce
     .number({ error: "Pick a month" })
     .int()
     .min(1, "Month must be 1-12")
-    .max(12, "Month must be 1-12"),
+    .max(12, "Month must be 1-12")
+    .optional(),
+  currency: z.enum(CURRENCY_CODES, { error: "Pick a supported currency" }).optional(),
 });
 
-/** Never throws on a missing or pre-migration document: absent = calendar year. */
+/** Never throws on a missing or pre-migration document: absent = the defaults. */
 export async function getSettings(userId: string) {
   await connectDb();
-  const user = await M.User.findById(userId, { fiscalYearStartMonth: 1 }).lean();
+  const user = await M.User.findById(userId, { fiscalYearStartMonth: 1, currency: 1 }).lean();
   return {
     fiscalYearStartMonth: isFiscalStartMonth(user?.fiscalYearStartMonth)
       ? user.fiscalYearStartMonth
       : CALENDAR_YEAR_START,
+    currency: isCurrency(user?.currency) ? user.currency : DEFAULT_CURRENCY,
   };
 }
 
 export async function updateSettings(userId: string, raw: unknown) {
   const parsed = zSettings.safeParse(raw);
   if (!parsed.success) throw new AppError("VALIDATION_FAILED", parsed.error.issues[0].message);
+  // Only what was actually sent. An explicit `undefined` reaching $set writes a
+  // BSON null over a perfectly good preference, which is the same trap the repo
+  // guards against on the filter side.
+  const $set = Object.fromEntries(Object.entries(parsed.data).filter(([, v]) => v !== undefined));
+  if (Object.keys($set).length === 0) throw new AppError("VALIDATION_FAILED", "No settings were supplied.");
+
   await connectDb();
   const user = await M.User.findByIdAndUpdate(
     userId,
-    { $set: parsed.data },
-    { returnDocument: "after", projection: { fiscalYearStartMonth: 1 } }
+    { $set },
+    { returnDocument: "after", projection: { fiscalYearStartMonth: 1, currency: 1 } }
   ).lean();
   if (!user) throw new AppError("NOT_FOUND", "That account no longer exists.");
-  return { fiscalYearStartMonth: user.fiscalYearStartMonth };
+
+  const saved = { fiscalYearStartMonth: user.fiscalYearStartMonth, currency: user.currency };
+  // Read the answer back and check it. Mongoose's strict mode DROPS an update
+  // path the compiled schema does not know about, and it drops it silently: the
+  // write answers 200, the value never moves, the screen looks broken and there
+  // is nothing in the log to say why. That is exactly what a stale compiled
+  // model produces (see models.ts), and it is the failure mode this whole file
+  // is least able to notice. One comparison turns it into a real error.
+  for (const [key, value] of Object.entries($set))
+    if (saved[key as keyof typeof saved] !== value)
+      throw new AppError("INTERNAL", `Could not save that setting. Reload the page and try again.`);
+
+  return saved;
 }
 
 export async function createUser(raw: unknown) {

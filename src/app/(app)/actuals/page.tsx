@@ -12,7 +12,7 @@ import Link from "next/link";
 import { requireRepo } from "@/lib/auth";
 import { formatMonthLabel, isMonth, monthRange } from "@/lib/month";
 import { resolveRange, type SearchParams } from "@/lib/range";
-import { getActuals, getCategories, getLockedMonths } from "@/lib/reads";
+import { getActuals, getCategories, getLockedMonths, getSettings } from "@/lib/reads";
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { ActualForm } from "./ActualForm";
@@ -50,9 +50,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
 
   // A one-month range IS the lock question, so it reuses the cached read the
   // report and the plans grid already fill rather than a second exists() query.
-  const [lockedMonths, actuals] = await Promise.all([
+  const [lockedMonths, actuals, { currency }] = await Promise.all([
     getLockedMonths(uid, month, month),
     getActuals(uid, month, category.id),
+    getSettings(uid),
   ]);
   const locked = lockedMonths.length > 0;
   // One entry per category x month, so this read returns nothing or one row.
@@ -74,6 +75,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
       />
       <div className="min-w-80 flex-1">
         <ActualsList
+          currency={currency}
           caption={`${category.name} · ${formatMonthLabel(month)}`}
           month={month}
           locked={locked}

@@ -10,6 +10,7 @@
 import { Types } from "mongoose";
 import { M } from "./models";
 import { toCsv } from "../lib/csv";
+import { type CurrencyCode } from "../lib/currency";
 import { toMajor } from "../lib/money";
 import { buildRow, rangeTotals, type VarianceRow } from "../lib/variance";
 import type { ScopedRepo } from "./repo";
@@ -126,8 +127,14 @@ export type Report = Awaited<ReturnType<typeof runReport>>;
  *
  * `closed` carries the lock state, which the table shows as a badge — otherwise
  * the export loses the reason a row cannot be edited.
+ *
+ * The currency is named in the money HEADERS rather than printed beside every
+ * figure or given a column of its own: a symbol in the cell would make it text
+ * that no longer sums, and a per-row column would repeat one constant on every
+ * line. "Plan (INR)" is what a spreadsheet reader expects and what keeps the
+ * cell a number.
  */
-export function reportCsv({ rows, totals, lockedMonths }: Report): string {
+export function reportCsv({ rows, totals, lockedMonths }: Report, currency: CurrencyCode): string {
   const locked = new Set(lockedMonths);
   const money = (minor: number) => toMajor(minor);
   // Round the ratio, do not truncate the number: -9.120000000000001 is a float
@@ -135,7 +142,15 @@ export function reportCsv({ rows, totals, lockedMonths }: Report): string {
   const pct = (v: number | null) => (v === null ? null : Number(v.toFixed(2)));
 
   return toCsv(
-    ["Category", "Month", "Plan", "Actual", "Variance", "Variance %", "Closed"],
+    [
+      "Category",
+      "Month",
+      `Plan (${currency})`,
+      `Actual (${currency})`,
+      `Variance (${currency})`,
+      "Variance %",
+      "Closed",
+    ],
     [
       ...rows.map(r => [
         r.categoryName,
