@@ -4,9 +4,9 @@
  * rewrites ?categoryId=&month= and the server re-reads. One control set, no
  * duplicate filter row.
  *
- * A cell holds one entry, so the form is seeded with whatever is already there
- * and saving replaces it — the screen cannot produce a second row for the same
- * category and month, and neither can the API.
+ * A category+month is a ledger, not a cell: the form appends, so logging three
+ * ad invoices against Marketing in March is three rows that the list totals and
+ * the report sums. Correcting one is removing that row and logging it again.
  */
 import Link from "next/link";
 import { requireRepo } from "@/lib/auth";
@@ -56,20 +56,14 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
     getSettings(uid),
   ]);
   const locked = lockedMonths.length > 0;
-  // One entry per category x month, so this read returns nothing or one row.
-  const current = actuals[0];
 
   return (
     <div className="flex flex-wrap items-start gap-6">
-      {/* Remount when the cell changes: the form is seeded from `current`, and
-          defaults are read once. */}
       <ActualForm
-        key={`${category.id}:${month}`}
         categories={categories}
         categoryId={category.id}
         month={month}
         locked={locked}
-        current={current && { amountMinor: current.amountMinor, note: current.note }}
         from={from}
         to={to}
       />

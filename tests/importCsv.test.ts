@@ -21,8 +21,8 @@ beforeAll(async () => {
   mongod = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   // monitorCommands is what lets the last test below count round trips.
   await mongoose.connect(mongod.getUri(), { monitorCommands: true });
-  // The one-entry-per-cell constraint is the database's, so wait for the index
-  // rather than trusting autoIndex to have won the race against the first write.
+  // The read index is what keeps listActuals' {month, createdAt} sort out of a
+  // blocking SORT stage; wait for the build rather than racing the first write.
   await M.Actual.init();
   repo = new ScopedRepo(new Types.ObjectId());
   await repo.createCategory("Marketing");
@@ -61,15 +61,15 @@ describe("previewCsv reports every problem and writes nothing", () => {
     expect(row.error).toContain("2026-01 is locked");
   });
 
-  it("flags a row that repeats a category+month already claimed in the file", async () => {
+  it("accepts several lines for one category+month — that is a month of spend", async () => {
     const results = await previewCsv(
       repo,
       csv("2026-02,Marketing,100", "2026-02,Payroll,200", "2026-02,marketing,300")
     );
-    expect(results.map(r => r.ok)).toEqual([true, true, false]);
-    // Points at the line it repeats, and matches on the normalised name — the
-    // duplicate here differs only in case.
-    expect(results[2].error).toContain("Line 1 already covers Marketing in 2026-02");
+    expect(results.map(r => r.ok)).toEqual([true, true, true]);
+    // The third line resolves to the SAME category as the first: normalizeName
+    // is what makes "marketing" and "Marketing" one category rather than two.
+    expect(results[0].parsed!.categoryId).toBe(results[2].parsed!.categoryId);
   });
 
   it("skips blank lines without renumbering the rows around them", async () => {
@@ -127,29 +127,36 @@ describe("commitCsv is all-or-nothing", () => {
   });
 
   /**
-   * The failure this whole change exists to stop: before, re-running an import
-   * wrote every row a second time and the report quietly doubled the month. Each
-   * row now upserts onto its cell, so the file is the statement of what those
-   * cells hold — running it twice is running it once.
+   * Rows append, so the failure to stop is a nervous re-upload writing every
+   * line a second time and the report quietly doubling the month. The batch id
+   * is a hash of the file rather than a fresh uuid per run, and the commit
+   * clears that batch before it writes — so the same file is the same import
+   * however many times it is sent.
    */
-  it("re-importing the same file replaces the cells instead of doubling them", async () => {
+  it("re-importing the same file replaces what it wrote instead of doubling it", async () => {
     const file = csv("2026-04,Marketing,111", "2026-04,Payroll,222");
-    await commitCsv(repo, file);
+    const first = await commitCsv(repo, file);
     const before = await countActuals();
 
     const again = await commitCsv(repo, file);
     expect(again.committed).toBe(2);
+    expect(again.importBatchId).toBe(first.importBatchId); // same file, same batch
     expect(await countActuals()).toBe(before); // no new rows
 
     const cell = await repo.listActuals({ month: "2026-04" });
     expect(cell.map(a => a.amountMinor).sort((x, y) => x - y)).toEqual([11100, 22200]);
   });
 
-  it("a later file overwrites an earlier figure for the same cell", async () => {
+  /**
+   * The other half of that rule, and the reason it is scoped to a batch rather
+   * than to a cell: a DIFFERENT file naming the same category and month is more
+   * spend in that month, not a correction of what is already there.
+   */
+  it("a different file adds to the same cell rather than overwriting it", async () => {
     await commitCsv(repo, csv("2026-05,Marketing,100"));
     await commitCsv(repo, csv("2026-05,Marketing,250"));
     const cell = await repo.listActuals({ month: "2026-05" });
-    expect(cell.map(a => a.amountMinor)).toEqual([25000]);
+    expect(cell.map(a => a.amountMinor)).toEqual([10000, 25000]);
   });
 });
 
@@ -178,9 +185,10 @@ describe("import cost does not scale with file size", () => {
     return n;
   };
 
-  // One row per cell, so the rows walk months rather than repeating one —
-  // 200 copies of the same category+month is a duplicate file now, not a big
-  // one. Started well past the months the tests above use so nothing collides.
+  // The rows walk months rather than repeating one, so this measures a wide
+  // file rather than one deep cell — both are legal now, and a per-month spread
+  // is what the report's range query has to survive. Started well past the
+  // months the tests above use so nothing collides.
   const rows = (n: number) =>
     csv(
       ...Array.from(
@@ -199,7 +207,6 @@ describe("import cost does not scale with file size", () => {
 
   it("commits 200 rows in one write command, not 200", async () => {
     const before = await countActuals();
-    // bulkWrite of upserts, so the command is `update` rather than `insert`.
     const writes = await countRoundTrips(["update", "insert"], () => commitCsv(repo, rows(200)));
 
     expect(writes).toBe(1);

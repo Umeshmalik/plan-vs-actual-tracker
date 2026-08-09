@@ -207,7 +207,7 @@ describe("credential stuffing is capped", () => {
 
 describe("query-selector injection cannot reach a filter", () => {
   it("sanitizeFilter turns an operator-shaped value into a value", async () => {
-    await state.repo.upsertActual({
+    await state.repo.createActual({
       categoryId: String(new Types.ObjectId()),
       month: "2026-02",
       amountMinor: 100,

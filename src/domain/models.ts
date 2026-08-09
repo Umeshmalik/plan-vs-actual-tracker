@@ -151,27 +151,38 @@ const Actual = new Schema<ActualDoc>(
   },
   { timestamps: true }
 );
-// One entry per category x month — the same rule Plan carries, for the same
-// reason: a second entry for a cell is the same spend recorded twice, not a
-// second line item. Without it nothing stops a double-submitted form, a CSV
-// that repeats a row, or the same file being imported again from doubling a
-// month's spend, and the report sums whatever it finds. Writes upsert onto the
-// cell (repo.upsertActual), so obeying it is the only thing a caller can do.
-Actual.index({ userId: 1, categoryId: 1, month: 1 }, { unique: true });
-// Matches the report's query shape exactly: filter userId+month range, group by category.
-// Serves the drill-down too — repo.listActuals({month, categoryId}) is three
-// equalities against this same prefix order, and the {categoryId}-only variant
-// still seeks: month has a couple of dozen distinct values, so the planner walks
-// one interval per month rather than the whole collection (measured in
-// tests/indexes.test.ts — 264 keys read to return 240 rows).
+// NO unique {userId, categoryId, month} here, deliberately, and that is the one
+// place Actual parts company with Plan. A plan is a target — a cell has exactly
+// one — but spend is a LEDGER: a category is hit several times in a month (three
+// ad invoices, two tool renewals), and each of those is its own line item with
+// its own note. The report already $sums per cell, so many rows and one row read
+// the same downstream; what a unique index bought was protection from a
+// double-submitted form and a re-imported file, and both of those are handled
+// where they happen instead (the form is an append the user can see and remove,
+// the import replaces its own batch — see importCsv.ts).
+//
+// Mongoose never DROPS an index it stopped declaring, so removing one from this
+// file leaves it in place on any database that already built it — and the next
+// insert fails with a duplicate-key error that has no line of code to blame.
+// The deployed cluster has had `userId_1_categoryId_1_month_1` dropped by hand
+// (`db.actuals.dropIndex("userId_1_categoryId_1_month_1")`); a database created
+// before that change needs the same one-liner. Never `syncIndexes()` — see
+// AGENTS.md, the categories collection is shared with another application.
+//
+// Matches the report's query shape exactly: filter userId+month range, group by
+// category. Serves the drill-down too — repo.listActuals({month, categoryId}) is
+// three equalities against this same prefix order, and the {categoryId}-only
+// variant still seeks: month has a couple of dozen distinct values, so the
+// planner walks one interval per month rather than the whole collection
+// (measured in tests/indexes.test.ts — 264 keys read to return 240 rows).
 //
 // createdAt is the trailing key, and it is there for the sort, not the filter.
 // listActuals orders by {month, createdAt} and caps at ACTUALS_LIMIT; with the
 // three equalities pinned, month is constant and createdAt is the only thing
 // left to order by, so the index supplies it rather than the plan ending in a
-// blocking SORT. A single cell now holds one entry, so that sort is short — but
-// the category-only drill-down still walks a row per month in order, and the
-// unfiltered read still reaches ACTUALS_LIMIT. The report's range $match is
+// blocking SORT. That sort now matters more than it used to: a cell holds a
+// whole month of entries, so this is the index that keeps a busy category's
+// drill-down in chronological order for free. The report's range $match is
 // untouched: it uses the {userId, month, categoryId} prefix exactly as before.
 Actual.index({ userId: 1, month: 1, categoryId: 1, createdAt: 1 });
 

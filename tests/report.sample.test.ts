@@ -30,10 +30,15 @@ beforeAll(async () => {
   await repo.upsertPlan(String(mkt._id), "2026-02", toMinor(5000));
   await repo.upsertPlan(String(pay._id), "2026-02", toMinor(20000));
 
-  await repo.upsertActual({ categoryId: String(mkt._id), month: "2026-01", amountMinor: toMinor(4800) });
-  await repo.upsertActual({ categoryId: String(pay._id), month: "2026-01", amountMinor: toMinor(20500) });
+  // Marketing January is TWO entries, the way a real month is spent, summing to
+  // the PDF's 4,800. The assertions below are unchanged from when it was one
+  // row: a cell's entries collapse into a single report row, and the variance
+  // reads off the sum. That is the whole point of dropping the unique index.
+  await repo.createActual({ categoryId: String(mkt._id), month: "2026-01", amountMinor: toMinor(3100) });
+  await repo.createActual({ categoryId: String(mkt._id), month: "2026-01", amountMinor: toMinor(1700) });
+  await repo.createActual({ categoryId: String(pay._id), month: "2026-01", amountMinor: toMinor(20500) });
   // Marketing Feb intentionally omitted (matches the PDF)
-  await repo.upsertActual({ categoryId: String(pay._id), month: "2026-02", amountMinor: toMinor(19800) });
+  await repo.createActual({ categoryId: String(pay._id), month: "2026-02", amountMinor: toMinor(19800) });
 });
 
 afterAll(async () => {

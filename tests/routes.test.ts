@@ -59,7 +59,7 @@ const json = async (r: Response) => [r.status, await r.json()] as const;
 beforeAll(async () => {
   mongod = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   await mongoose.connect(mongod.getUri());
-  // Every unique index this file asserts — duplicate category, one entry per
+  // Every unique index this file asserts — duplicate category, one plan per
   // cell — is built in the BACKGROUND by autoIndex, so a fast first write can
   // land before the constraint exists and the assertion fails for a reason that
   // has nothing to do with the code. Wait for all of them rather than racing.
@@ -154,23 +154,24 @@ describe("REST layer", () => {
   });
 
   /**
-   * The duplicate the user reported: the same category and month posted twice.
-   * It has to answer with one entry, not two rows the report silently adds up.
+   * The feature: a category is spent against several times in a month, so the
+   * same category+month posted twice is two line items with their own notes and
+   * their own delete, and the report's $sum is what adds them together.
    */
-  it("actuals: posting the same category+month again replaces it, never appends", async () => {
+  it("actuals: posting the same category+month again appends a second entry", async () => {
     const post = (amount: number, note?: string) =>
       actuals.POST(req("/api/actuals", "POST", { categoryId: catId, month: "2026-05", amount, note }));
 
     const [, first] = await json(await post(10, "first"));
-    const [s, second] = await json(await post(25));
+    const [s, second] = await json(await post(25, "second"));
 
     expect(s).toBe(200);
-    expect(second.actual._id).toBe(first.actual._id); // same row, not a new one
+    expect(second.actual._id).not.toBe(first.actual._id); // a new row, not a replacement
     expect(second.actual.amountMinor).toBe(2500);
-    expect(second.actual.note).toBeUndefined(); // a replace clears what it does not carry
+    expect(second.actual.note).toBe("second"); // each entry keeps its own
 
     const cell = await state.repo.listActuals({ month: "2026-05", categoryId: catId });
-    expect(cell).toHaveLength(1);
+    expect(cell.map(a => a.amountMinor)).toEqual([1000, 2500]); // oldest first
   });
 
   it("actuals: junk id -> 404, not 500 (no CastError escapes the repo)", async () => {
@@ -210,7 +211,7 @@ describe("REST layer", () => {
   });
 
   it("deleting an actual inside a month locked afterwards is 409", async () => {
-    const made = await state.repo.upsertActual({ categoryId: catId, month: "2026-03", amountMinor: 100 });
+    const made = await state.repo.createActual({ categoryId: catId, month: "2026-03", amountMinor: 100 });
     await state.repo.lock("2026-03");
     const id = String(made._id);
     const [s, b] = await json(
@@ -260,17 +261,21 @@ describe("REST layer", () => {
     expect((await commit.POST(req("/api/imports/commit", "POST", { csv: "" }))).status).toBe(422);
   });
 
-  it("imports: a file that names one cell twice is 422, and writes nothing", async () => {
+  it("imports: a file that names one cell twice writes both lines, and re-importing it replaces them", async () => {
     const before = (await state.repo.listActuals({})).length;
-    const dupe = "month,category,amount\n2026-06,Marketing,10\n2026-06,Marketing,20";
+    const twice = "month,category,amount\n2026-06,Marketing,10\n2026-06,Marketing,20";
 
-    const [s, b] = await json(await preview.POST(req("/api/imports/preview", "POST", { csv: dupe })));
-    expect([s, b.okCount, b.errorCount]).toEqual([200, 1, 1]);
-    expect(b.results[1].error).toContain("Line 1 already covers Marketing in 2026-06");
+    const [s, b] = await json(await preview.POST(req("/api/imports/preview", "POST", { csv: twice })));
+    expect([s, b.okCount, b.errorCount]).toEqual([200, 2, 0]);
 
-    const [s2, b2] = await json(await commit.POST(req("/api/imports/commit", "POST", { csv: dupe })));
-    expect([s2, b2.error.code]).toEqual([422, "VALIDATION_FAILED"]);
-    expect((await state.repo.listActuals({})).length).toBe(before);
+    const [s2, b2] = await json(await commit.POST(req("/api/imports/commit", "POST", { csv: twice })));
+    expect([s2, b2.committed]).toEqual([200, 2]);
+    const cell = await state.repo.listActuals({ month: "2026-06" });
+    expect(cell.map(a => a.amountMinor)).toEqual([1000, 2000]); // two entries, both kept
+
+    // The same file again is the same import, not a second month's spend.
+    expect((await commit.POST(req("/api/imports/commit", "POST", { csv: twice }))).status).toBe(200);
+    expect((await state.repo.listActuals({})).length).toBe(before + 2);
   });
 
   it("imports: commit into a month locked after preview is 409", async () => {

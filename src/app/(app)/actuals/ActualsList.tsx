@@ -1,12 +1,14 @@
 "use client";
 
 /**
- * ActualsList — what one category+month currently holds, which is one entry or
- * none. DataTable renders it inside a Card; Remove is an icon Button behind a
- * Tooltip and an AlertDialog, because a deleted entry does not come back.
+ * ActualsList — every entry logged against one category+month, oldest first.
+ * DataTable renders it inside a Card; Remove is an icon Button behind a Tooltip
+ * and an AlertDialog, because a deleted entry does not come back.
  *
- * No total row: with one entry per cell the total IS the row, and repeating it
- * underneath was the screen's own way of implying there could be several.
+ * The footer totals the rows, because that sum is what the report counts for
+ * this cell and a list of five invoices does not add itself up on sight. It is
+ * summed here rather than passed in: these ARE the rows, so a total computed
+ * from anything else could disagree with what is on screen.
  *
  * The removal is a `useApiMutation` with a path-param url, so the row id is the
  * variable and no body is sent; pending, the toast and the refresh are the
@@ -33,6 +35,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
+import { TableCell, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface Row {
@@ -104,9 +107,9 @@ export function ActualsList({
             <AlertDialogHeader>
               <AlertDialogTitle>Remove this entry?</AlertDialogTitle>
               <AlertDialogDescription>
-                Removing this entry of <MoneyText currency={currency} minor={r.amountMinor} /> leaves{" "}
-                {caption} with no recorded spend, so the report counts it as 0. Log it again if you need it
-                back — or save a new figure over it instead, which does not need this step.
+                Removing this entry of <MoneyText currency={currency} minor={r.amountMinor} /> takes it off{" "}
+                {caption}, so the report counts that much less against the plan. The other entries for this
+                category and month are untouched. Log it again if you need it back.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -135,7 +138,23 @@ export function ActualsList({
           {/* DataTable's caption is the section title, so the Card adds the
               status line under the table instead of a second heading. */}
           <CardContent>
-            <DataTable caption={caption} columns={columns} rows={rows} rowKey={r => r.id} />
+            <DataTable
+              caption={caption}
+              columns={columns}
+              rows={rows}
+              rowKey={r => r.id}
+              footer={
+                <TableRow>
+                  <TableCell colSpan={2}>
+                    {rows.length === 1 ? "1 entry" : `${rows.length} entries`}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <MoneyText currency={currency} minor={rows.reduce((sum, r) => sum + r.amountMinor, 0)} />
+                  </TableCell>
+                  <TableCell />
+                </TableRow>
+              }
+            />
           </CardContent>
 
           {locked && (

@@ -370,10 +370,11 @@ export function ImportFlow({ currency }: { currency: CurrencyCode }) {
                   <AlertDialogHeader>
                     <AlertDialogTitle>Import {plural(results.length, "row")}?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This writes {plural(results.length, "row")} as actuals in one transaction. Each row
-                      replaces whatever that category and month already holds, so importing the same file
-                      twice lands on the same figures rather than doubling them. Commits are all-or-nothing:
-                      if the server rejects any row, nothing is written.
+                      This writes {plural(results.length, "row")} as actuals in one transaction, each one its
+                      own entry that adds to whatever that category and month already holds. Importing this
+                      exact file again replaces what it wrote rather than doubling it — an edited file is a
+                      new import, so remove the old rows first. Commits are all-or-nothing: if the server
+                      rejects any row, nothing is written.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>

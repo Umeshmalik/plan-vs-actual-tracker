@@ -126,37 +126,34 @@ describe("the hot reads are index seeks, not collection scans", () => {
   });
 
   /**
-   * The constraint the app leans on, asserted at the layer that enforces it:
-   * upsertActual and the import's bulkWrite both aim at one entry per cell, but
-   * this is the thing that holds when a race, a script or a mongosh session
-   * goes around them.
+   * The rule this collection deliberately does NOT carry, asserted so a
+   * well-meaning "Plan has a unique index, Actual should too" cannot land
+   * silently: a category and month is a ledger, and several spends in one month
+   * is the normal case rather than the same figure written twice.
+   *
+   * The database is the layer that has to allow it — a unique index left behind
+   * on an existing collection (Mongoose never drops one it stopped declaring)
+   * fails the write with a duplicate-key error no line of app code explains.
    */
-  it("the database refuses a second entry for one category x month", async () => {
-    await expect(
-      M.Actual.create({
-        userId,
-        categoryId: catIds[0],
-        month: MONTHS[0],
-        amountMinor: 1,
-        source: "manual",
-      })
-    ).rejects.toMatchObject({ code: 11000 });
+  it("the database accepts several entries for one category x month, in order", async () => {
+    const cell = { month: MONTHS[0], categoryId: String(catIds[0]) };
+    const before = await repo.listActuals(cell);
 
-    // Same cell, different tenant, is not a duplicate — the index is scoped.
-    await expect(
-      M.Actual.create({
-        userId: new Types.ObjectId(),
-        categoryId: catIds[0],
-        month: MONTHS[0],
-        amountMinor: 1,
-        source: "manual",
-      })
-    ).resolves.toBeTruthy();
+    await repo.createActual({ ...cell, amountMinor: 700, note: "second invoice" });
+    await repo.createActual({ ...cell, amountMinor: 300, note: "third invoice" });
+
+    const after = await repo.listActuals(cell);
+    expect(after).toHaveLength(before.length + 2);
+    // Oldest first, straight off the index's trailing createdAt key.
+    expect(after.map(a => a.amountMinor).slice(-2)).toEqual([700, 300]);
+    // What the report will see for this cell is the sum, not the last write.
+    expect(after.reduce((n, a) => n + a.amountMinor, 0)).toBe(1000 + 700 + 300);
   });
 
   it("listActuals caps an unfiltered read at its documented ceiling", async () => {
-    const all = await repo.listActuals({});
-    expect(all).toHaveLength(MONTHS.length * catIds.length); // 120, under the 500 ceiling: nothing hidden yet
+    const total = await M.Actual.countDocuments({ userId });
+    expect(total).toBeLessThan(500); // under the ceiling: nothing hidden yet
+    expect(await repo.listActuals({})).toHaveLength(total);
     expect(await repo.listActuals({}, 10)).toHaveLength(10); // the ceiling is real
   });
 });

@@ -53,17 +53,26 @@ async function main() {
   await demo.upsertPlan(mkt, "2026-02", toMinor(5000));
   await demo.upsertPlan(pay, "2026-02", toMinor(20000));
 
-  await demo.upsertActual({
+  // Marketing January is TWO entries that sum to the PDF's 4,800 — a category
+  // holds a month of spend, not one figure, and the sample data says so on the
+  // screen a reviewer opens first.
+  await demo.createActual({
     categoryId: mkt,
     month: "2026-01",
-    amountMinor: toMinor(4800),
-    note: "Ads + events",
+    amountMinor: toMinor(3100),
+    note: "Ads",
   });
-  await demo.upsertActual({ categoryId: pay, month: "2026-01", amountMinor: toMinor(20500) });
-  await demo.upsertActual({ categoryId: pay, month: "2026-02", amountMinor: toMinor(19800) });
+  await demo.createActual({
+    categoryId: mkt,
+    month: "2026-01",
+    amountMinor: toMinor(1700),
+    note: "Events",
+  });
+  await demo.createActual({ categoryId: pay, month: "2026-01", amountMinor: toMinor(20500) });
+  await demo.createActual({ categoryId: pay, month: "2026-02", amountMinor: toMinor(19800) });
   // Marketing Feb has no actual on purpose (missing actual = 0, -5,000 / -100%).
   // Unbudgeted spend demo (hasPlan:false in the report):
-  await demo.upsertActual({
+  await demo.createActual({
     categoryId: tools,
     month: "2026-01",
     amountMinor: toMinor(340),
@@ -78,13 +87,13 @@ async function main() {
 
   await other.upsertPlan(contractors, "2026-01", toMinor(8000));
   await other.upsertPlan(contractors, "2026-02", toMinor(8000));
-  await other.upsertActual({
+  await other.createActual({
     categoryId: contractors,
     month: "2026-01",
     amountMinor: toMinor(8400),
     note: "Two retainers",
   });
-  await other.upsertActual({ categoryId: contractors, month: "2026-02", amountMinor: toMinor(7900) });
+  await other.createActual({ categoryId: contractors, month: "2026-02", amountMinor: toMinor(7900) });
   // No lock here: January is closed for demo@ and open for other@ — same month,
   // different tenant, different answer.
 

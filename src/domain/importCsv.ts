@@ -1,10 +1,11 @@
 /**
  * importCsv.ts — two-phase import: preview (nothing written) then commit
  * (all-or-nothing in a transaction). Converts "upload and pray" into a
- * reviewable diff. Locked-month rows, and rows that repeat a category+month
- * already claimed earlier in the same file, are rejected at validation time.
+ * reviewable diff. Locked-month rows are rejected at validation time; a file
+ * that names the same category and month on several lines is a normal file,
+ * because a category-month holds a whole month of spend.
  */
-import { randomUUID } from "crypto";
+import { createHash } from "crypto";
 import mongoose from "mongoose";
 import { zCsvRow } from "./schemas";
 import { toMinor } from "../lib/money";
@@ -29,13 +30,6 @@ export async function previewCsv(repo: ScopedRepo, csvText: string): Promise<Row
   // closed do not change mid-file — so a 20k-row import used to spend 40,000
   // round trips re-asking two questions it had already answered.
   const [categoriesByName, lockedMonths] = await Promise.all([repo.categoriesByName(), repo.lockedMonths()]);
-
-  // A cell holds one entry, so a file that names the same category and month
-  // twice is describing one figure twice. Caught here rather than at the write:
-  // the commit upserts, so the later line would quietly win and the user would
-  // be told "2 rows imported" for one cell. First line for each cell wins the
-  // spot; the rest come back flagged, pointing at the line they repeat.
-  const firstLineFor = new Map<string, number>();
 
   const results: RowResult[] = [];
   for (let i = 0; i < body.length; i++) {
@@ -65,17 +59,6 @@ export async function previewCsv(repo: ScopedRepo, csvText: string): Promise<Row
       });
       continue;
     }
-    const cell = `${parsed.data.month}|${cat._id}`;
-    const repeats = firstLineFor.get(cell);
-    if (repeats !== undefined) {
-      results.push({
-        line,
-        ok: false,
-        error: `Line ${repeats} already covers ${cat.name} in ${parsed.data.month}. One row per category and month — merge them into a single line.`,
-      });
-      continue;
-    }
-    firstLineFor.set(cell, line);
     results.push({
       line,
       ok: true,
@@ -100,14 +83,24 @@ export async function commitCsv(repo: ScopedRepo, csvText: string) {
   // transaction — a lock landing in that millisecond window would be missed.
   // Single-user editing makes it unreachable in practice; the real fix is a
   // unique {userId, month} guard document written inside the transaction.
-  const importBatchId = randomUUID();
+
+  // The batch id is the FILE, not the click: rows append now, so a random id per
+  // run would let a double-click or a nervous re-upload stack a second copy of
+  // every line and the report would sum both. Hashing the content means the same
+  // file always lands on the same batch, which the commit below clears before it
+  // writes — importing twice is importing once.
+  //
+  // ponytail: exact-match only. A file edited between imports is a different
+  // batch, so its unchanged lines are written a second time; the user removes
+  // the old batch's rows by hand. The upgrade is a per-row identity (a reference
+  // column in the CSV) the day anyone re-uploads amended files routinely.
+  const importBatchId = createHash("sha256").update(csvText).digest("hex");
   const session = await mongoose.startSession();
   try {
     await session.withTransaction(async () => {
-      // One bulkWrite, not an await per row: the transaction holds its locks
-      // for a single round trip instead of one per line of the file. Each row
-      // upserts onto its cell, so re-importing a file settles on the same
-      // figures rather than doubling the month.
+      // One insertMany, not an await per row: the transaction holds its locks
+      // for a single round trip instead of one per line of the file.
+      await repo.deleteActualsByBatch(importBatchId, session);
       await repo.createActuals(
         results.map(r => ({ ...r.parsed!, source: "import" as const, importBatchId })),
         session

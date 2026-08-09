@@ -32,7 +32,7 @@ beforeAll(async () => {
   await a.upsertPlan(aCatId, "2026-01", toMinor(5000));
   await a.upsertPlan(aCatId, "2026-02", toMinor(5000));
   aActualId = String(
-    (await a.upsertActual({ categoryId: aCatId, month: "2026-01", amountMinor: toMinor(4800) }))._id
+    (await a.createActual({ categoryId: aCatId, month: "2026-01", amountMinor: toMinor(4800) }))._id
   );
   await a.lock("2026-01");
 });
